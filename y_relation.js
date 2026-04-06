@@ -274,31 +274,28 @@ function loadTerritoryData(territory) {
   currentTerritory = territory;
   currentDomain = items[0].domain;
 
+  function makeAspect(d, charge) {
+    return {
+      symbol:             d?.aspect_symbol    || '',
+      name:               d?.aspect_name      || '',
+      charge,
+      // Spiral body text
+      text: `${d?.create_aspect || ''}. ${d?.copy_aspect || ''}. ${d?.control_aspect || ''}`,
+      // Detail panel fields
+      autonomous_essence: d?.autonomous_essence || '',
+      create_aspect:      d?.create_aspect      || '',
+      copy_aspect:        d?.copy_aspect        || '',
+      control_aspect:     d?.control_aspect     || '',
+      domain:             d?.domain             || '',
+      territory:          d?.territory          || '',
+    };
+  }
+
   aspects = {
-    w: {
-      symbol: lights[0]?.aspect_symbol || '',
-      name: lights[0]?.aspect_name || '',
-      charge: 'light',
-      text: `${lights[0]?.create_aspect || ''}. ${lights[0]?.copy_aspect || ''}. ${lights[0]?.control_aspect || ''}`
-    },
-    y: {
-      symbol: lights[1]?.aspect_symbol || '',
-      name: lights[1]?.aspect_name || '',
-      charge: 'light',
-      text: `${lights[1]?.create_aspect || ''}. ${lights[1]?.copy_aspect || ''}. ${lights[1]?.control_aspect || ''}`
-    },
-    x: {
-      symbol: shadows[0]?.aspect_symbol || '',
-      name: shadows[0]?.aspect_name || '',
-      charge: 'shadow',
-      text: `${shadows[0]?.create_aspect || ''}. ${shadows[0]?.copy_aspect || ''}. ${shadows[0]?.control_aspect || ''}`
-    },
-    z: {
-      symbol: shadows[1]?.aspect_symbol || '',
-      name: shadows[1]?.aspect_name || '',
-      charge: 'shadow',
-      text: `${shadows[1]?.create_aspect || ''}. ${shadows[1]?.copy_aspect || ''}. ${shadows[1]?.control_aspect || ''}`
-    }
+    w: makeAspect(lights[0],  'light'),
+    y: makeAspect(lights[1],  'light'),
+    x: makeAspect(shadows[0], 'shadow'),
+    z: makeAspect(shadows[1], 'shadow'),
   };
 
   for (const dir of ORDER) {

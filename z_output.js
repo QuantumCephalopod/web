@@ -53,7 +53,10 @@ function requestRender() {
 
 function updateHoverVertex() {
   if (!mouseInside) {
-    hoverVertex = null;
+    if (hoverVertex !== null) {
+      hoverVertex = null;
+      hoverStartTime = 0;
+    }
     return;
   }
 
@@ -72,7 +75,11 @@ function updateHoverVertex() {
     }
   }
 
-  hoverVertex = bestD2 < HIT_RADIUS * HIT_RADIUS ? nearest : null;
+  const newHover = bestD2 < HIT_RADIUS * HIT_RADIUS ? nearest : null;
+  if (hoverVertex !== newHover) {
+    hoverVertex = newHover;
+    hoverStartTime = newHover ? performance.now() : 0;
+  }
 }
 
 function resizeCanvas() {
@@ -122,6 +129,7 @@ canvas.addEventListener('mouseleave', () => {
   mouseY = cy;
   mouseInside = false;
   hoverVertex = null;
+  hoverStartTime = 0;
   fieldDirty = true;
   requestRender();
 });
@@ -227,6 +235,20 @@ function renderSpiralBase(dir, projVert, boundScale) {
 
   const bakeCanvas = charge === 'light' ? cache.bakeCanvasDark : cache.bakeCanvasLight;
 
+  // Fade spiral out while ripple is active, fade back in when fading out
+  let alpha = 1.0;
+  if (activeRippleVertex === dir) {
+    const now = performance.now();
+    if (rippleFadeOut) {
+      const t = clamp((now - rippleFadeStartTime) / (RIPPLE_DURATION_MS * 0.6), 0, 1);
+      alpha = clamp(0.08 + easeInOut(t) * 0.92, 0, 1);
+    } else {
+      const t = clamp((now - rippleStartTime) / (RIPPLE_DURATION_MS * 0.7), 0, 1);
+      alpha = clamp(1.0 - easeInOut(t) * 0.92, 0.08, 1);
+    }
+  }
+  ctx.globalAlpha = alpha;
+
   ctx.drawImage(
     bakeCanvas,
     cache.bakeHalf - srcHalf,
@@ -238,6 +260,8 @@ function renderSpiralBase(dir, projVert, boundScale) {
     bakedSizePx,
     bakedSizePx
   );
+  
+  ctx.globalAlpha = 1.0;
 }
 
 function renderAspectName(dir, projVert, boundScale) {
@@ -245,6 +269,20 @@ function renderAspectName(dir, projVert, boundScale) {
   const { x, y, scale } = projVert;
   const localScale = scale * boundScale;
   const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
+
+  // Mirror the spiral alpha so name text fades in sync
+  let alpha = 1.0;
+  if (activeRippleVertex === dir) {
+    const now = performance.now();
+    if (rippleFadeOut) {
+      const t = clamp((now - rippleFadeStartTime) / (RIPPLE_DURATION_MS * 0.6), 0, 1);
+      alpha = clamp(0.08 + easeInOut(t) * 0.92, 0, 1);
+    } else {
+      const t = clamp((now - rippleStartTime) / (RIPPLE_DURATION_MS * 0.7), 0, 1);
+      alpha = clamp(1.0 - easeInOut(t) * 0.92, 0.08, 1);
+    }
+  }
+  ctx.globalAlpha = alpha;
 
   ctx.save();
   ctx.translate(x, y);
@@ -280,6 +318,75 @@ function renderAspectName(dir, projVert, boundScale) {
   }
 
   ctx.restore();
+  ctx.globalAlpha = 1.0;
+}
+
+// ── Portal Ripple ────────────────────────────────────────────────────────────
+
+function drawRipple(dir, p) {
+  if (!activeRippleVertex || rippleFadeOut) return;
+  const { charge, cache } = aspects[dir];
+  const { x, y, scale } = p[dir];
+  const outerR  = cache.outerR * scale * boundScaleState;
+  const innerR  = DOT_R * scale * 0.5;
+  // Rings expand outward a bit beyond the spiral edge for a nice portal feel
+  const maxR    = outerR * 1.12;
+
+  const now     = performance.now();
+  const elapsed = now - rippleStartTime;
+
+  // RGB components of the ring color match the spiral disc color
+  const rgb = charge === 'light' ? '15,15,16' : '245,242,234';
+
+  for (let k = 0; k < RIPPLE_RING_COUNT; k++) {
+    const delay      = (k / RIPPLE_RING_COUNT) * RIPPLE_DURATION_MS;
+    const ringElapsed = elapsed - delay;
+    if (ringElapsed < 0 || ringElapsed > RIPPLE_DURATION_MS) continue;
+
+    const phase = ringElapsed / RIPPLE_DURATION_MS;
+    const r     = lerp(innerR, maxR, phase);
+    // Sine envelope: alpha peaks at mid-expansion
+    const ringAlpha = Math.sin(phase * Math.PI) * 0.55;
+    const lw        = lerp(3.5, 0.4, phase) * scale;
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${rgb},${ringAlpha})`;
+    ctx.lineWidth   = lw;
+    ctx.stroke();
+  }
+}
+
+// ── Detail Panel ─────────────────────────────────────────────────────────────
+
+function showDetailPanel(dir) {
+  const a   = aspects[dir];
+  const panel = document.getElementById('detail-panel');
+  if (!panel) return;
+
+  // Address line: domain → territory → aspect
+  panel.querySelector('.detail-address').textContent =
+    `${a.domain} › ${a.territory} › ${a.name}`;
+
+  // Symbol + name header
+  panel.querySelector('.detail-symbol').textContent = a.symbol;
+  panel.querySelector('.detail-name').textContent   = a.name;
+
+  // Essence line
+  panel.querySelector('.detail-essence').textContent = a.autonomous_essence;
+
+  // Three labeled sections
+  panel.querySelector('.detail-create').textContent  = a.create_aspect;
+  panel.querySelector('.detail-copy').textContent    = a.copy_aspect;
+  panel.querySelector('.detail-control').textContent = a.control_aspect;
+
+  // Activate (CSS handles the opacity transition)
+  panel.classList.add('active');
+}
+
+function hideDetailPanel() {
+  const panel = document.getElementById('detail-panel');
+  if (panel) panel.classList.remove('active');
 }
 
 function drawEdges(pv) {
@@ -350,13 +457,42 @@ function render() {
   rafId = 0;
   if (!W || !H || !aspects.w) return;
 
-  const prevRX = curRX;
-  const prevRY = curRY;
+  const prevRX  = curRX;
+  const prevRY  = curRY;
   const prevFlip = flipProgress;
 
-  curRX += (targetRX - curRX) * 0.08;
-  curRY += (targetRY - curRY) * 0.08;
+  curRX        += (targetRX - curRX) * 0.08;
+  curRY        += (targetRY - curRY) * 0.08;
   flipProgress += (flipTarget - flipProgress) * 0.09;
+
+  const now = performance.now();
+
+  // ── Trigger portal on 1.3 s dwell ──────────────────────────────────────────
+  if (hoverVertex && !activeRippleVertex && hoverStartTime && now - hoverStartTime > 1300) {
+    if (Math.abs(flipTarget - flipProgress) < 0.001) {
+      activeRippleVertex  = hoverVertex;
+      rippleStartTime     = now;
+      rippleFadeOut       = false;
+      showDetailPanel(activeRippleVertex);
+    }
+  }
+
+  // ── Start fade-out when hover moves away / changes vertex ──────────────────
+  if (activeRippleVertex && !rippleFadeOut &&
+      (!hoverVertex || hoverVertex !== activeRippleVertex)) {
+    rippleFadeOut      = true;
+    rippleFadeStartTime = now;
+    hideDetailPanel();
+  }
+
+  // ── Clean up once spiral is fully restored ─────────────────────────────────
+  if (activeRippleVertex && rippleFadeOut) {
+    const fadeElapsed = now - rippleFadeStartTime;
+    if (fadeElapsed > RIPPLE_DURATION_MS * 0.65) {
+      activeRippleVertex = null;
+      rippleFadeOut      = false;
+    }
+  }
 
   if (
     Math.abs(curRX - prevRX) > EPS ||
@@ -387,6 +523,8 @@ function render() {
   drawDots(sorted, p);
 
   for (const dir of sorted) {
+    // Draw ripple rings above spirals, below dots
+    if (dir === activeRippleVertex) drawRipple(dir, p);
     renderAspectName(dir, p[dir], boundScale);
   }
 
@@ -409,7 +547,13 @@ function render() {
     updateHoverVertex();
   }
 
-  if (needsAnotherFrame() || mouseInside) requestRender();
+  // Keep ticking while ripple rings are still expanding or fading in
+  const rippleActive = activeRippleVertex && (
+    (!rippleFadeOut && now - rippleStartTime < RIPPLE_DURATION_MS * 1.6) ||
+    rippleFadeOut
+  );
+
+  if (needsAnotherFrame() || mouseInside || rippleActive) requestRender();
 }
 
 function initSidecar() {
@@ -419,23 +563,41 @@ function initSidecar() {
   }
   const listEl = document.getElementById('territory-list');
   
-  const territories = [...new Set(window.FOUNDATION_DATA.map(d => d.territory))];
-  
-  territories.forEach(terr => {
-    const div = document.createElement('div');
-    div.className = 'territory-item';
-    div.textContent = terr;
-    if (terr === currentTerritory) div.classList.add('active');
+  // Group territories by domain
+  const domainMap = {};
+  window.FOUNDATION_DATA.forEach(d => {
+    if (!domainMap[d.domain]) domainMap[d.domain] = new Set();
+    domainMap[d.domain].add(d.territory);
+  });
+
+  Object.entries(domainMap).forEach(([domain, terrSet]) => {
+    const container = document.createElement('div');
+    container.className = 'domain-container';
     
-    div.onclick = () => {
-      document.querySelectorAll('.territory-item').forEach(el => el.classList.remove('active'));
-      div.classList.add('active');
-      loadTerritoryData(terr);
-    };
-    listEl.appendChild(div);
+    const title = document.createElement('div');
+    title.className = 'domain-title';
+    title.textContent = domain;
+    container.appendChild(title);
+    
+    terrSet.forEach(terr => {
+      const div = document.createElement('div');
+      div.className = 'territory-item';
+      div.textContent = terr;
+      if (terr === currentTerritory) div.classList.add('active');
+      
+      div.onclick = () => {
+        document.querySelectorAll('.territory-item').forEach(el => el.classList.remove('active'));
+        div.classList.add('active');
+        loadTerritoryData(terr);
+      };
+      container.appendChild(div);
+    });
+    
+    listEl.appendChild(container);
   });
   
-  loadTerritoryData(territories.includes('freedom') ? 'freedom' : territories[0]);
+  const allTerrs = [...new Set(window.FOUNDATION_DATA.map(d => d.territory))];
+  loadTerritoryData(allTerrs.includes('freedom') ? 'freedom' : allTerrs[0]);
 }
 
 resizeCanvas();

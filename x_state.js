@@ -21,6 +21,12 @@ let flipTarget = 0;
 let activePose = 'A';
 let lastClickedVertex = 'w';
 
+let hoverStartTime = 0;
+let activeRippleVertex = null;
+let rippleStartTime    = 0;
+let rippleFadeOut      = false;
+let rippleFadeStartTime = 0;
+
 // Will be hydrated mathematically by the relational engine layer
 let flipFrom, flipTo, flipMid;
 let qA, qB, SWAP_AXIS;
