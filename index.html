@@ -47,7 +47,7 @@ const EPS          = 0.0005;
 const VIEW_MARGIN  = 30;
 const NAME_WEIGHT  = 1.18;
 const NAME_SIZE_BOOST = 1.42;
-const NAME_PROX_RADIUS = 210;
+const NAME_PROX_RADIUS = 333;
 const NAME_GAP_BOOST = 9.5;
 const NAME_RADIAL_BOOST = 5.5;
 const SPIRAL_BAKE_SIZE = 1200;
@@ -221,11 +221,12 @@ function currentBaseOrientation() {
 }
 
 function buildSpiralLayout(name, text) {
-  const normalized = normalizeText(`${name} · ${text}`);
-  const chars = [...normalized];
+  const normalizedName = normalizeText(name);
+  const normalizedBody = normalizeText(`· ${text}`);
+  const nameChars = [...normalizedName].length;
+  const bodyChars = [...normalizedBody];
   const glyphs = [];
   const slotSize = CHAR_W + CHAR_GAP;
-  const nameChars = [...normalizeText(name)].length;
 
   function advanceAt(turnPos, isName) {
     const localSlot = slotSize * (isName ? NAME_SIZE_BOOST : 1);
@@ -244,28 +245,61 @@ function buildSpiralLayout(name, text) {
   const nameCenterOffset = nameChars > 0 ? nameAngleSum / nameChars : 0;
   const thetaStart = -Math.PI / 2 - nameCenterOffset;
 
+  // Inner ring: aspect name stays centered on the top arc near the disc.
   turnPos = 0;
-  let outerR = FIRST_ORBIT;
-
-  for (let i = 0; i < chars.length; i++) {
-    const isName = i < nameChars;
+  for (const ch of [...normalizedName]) {
     const theta = thetaStart + turnPos;
     const r = FIRST_ORBIT + SPIRAL_STEP * turnPos;
-
     glyphs.push({
-      char: chars[i],
+      char: ch,
       cos: Math.cos(theta),
       sin: Math.sin(theta),
       rotation: theta + Math.PI / 2,
       radius: r,
-      isName,
+      isName: true,
     });
-
-    outerR = r;
-    turnPos += advanceAt(turnPos, isName);
+    turnPos += advanceAt(turnPos, true);
   }
 
-  return { normalized, chars, glyphs, outerR, nameChars, thetaStart };
+  // Body spiral: start at the OUTER north seam and spiral clockwise inward,
+  // ending near the center. Letters stay upright along that reading direction,
+  // with their bottoms facing toward the center.
+  let bodyTurn = turnPos;
+  const rawBodySlots = [];
+  let outerR = FIRST_ORBIT + SPIRAL_STEP * bodyTurn;
+
+  for (let i = 0; i < bodyChars.length; i++) {
+    rawBodySlots.push({ turn: bodyTurn, radius: FIRST_ORBIT + SPIRAL_STEP * bodyTurn });
+    outerR = FIRST_ORBIT + SPIRAL_STEP * bodyTurn;
+    bodyTurn += advanceAt(bodyTurn, false);
+  }
+
+  const outermostTurn = rawBodySlots.length ? rawBodySlots[rawBodySlots.length - 1].turn : turnPos;
+  const bodySlots = rawBodySlots.map(slot => {
+    const theta = -Math.PI / 2 + (outermostTurn - slot.turn);
+    return { theta, radius: slot.radius };
+  });
+
+  for (let i = 0; i < bodyChars.length; i++) {
+    const slot = bodySlots[bodySlots.length - 1 - i];
+    glyphs.push({
+      char: bodyChars[i],
+      cos: Math.cos(slot.theta),
+      sin: Math.sin(slot.theta),
+      rotation: slot.theta + Math.PI / 2,
+      radius: slot.radius,
+      isName: false,
+    });
+  }
+
+  return {
+    normalized: `${normalizedName} ${normalizedBody}`.trim(),
+    chars: glyphs.map(g => g.char),
+    glyphs,
+    outerR,
+    nameChars,
+    thetaStart,
+  };
 }
 
 for (const dir of ORDER) {
@@ -560,7 +594,7 @@ function drawEmissionField(pv, p, boundScale) {
   ctx.drawImage(fieldCanvas, 0, 0, W, H);
 }
 
-function renderSpiral(dir, projVert, boundScale) {
+function renderSpiralBase(dir, projVert, boundScale) {
   const { charge, cache } = aspects[dir];
   const { x, y, scale } = projVert;
   const localScale = scale * boundScale;
@@ -570,7 +604,6 @@ function renderSpiral(dir, projVert, boundScale) {
   const srcSize = srcHalf * 2;
 
   const bakeCanvas = charge === 'light' ? cache.bakeCanvasDark : cache.bakeCanvasLight;
-  const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
 
   ctx.drawImage(
     bakeCanvas,
@@ -583,6 +616,13 @@ function renderSpiral(dir, projVert, boundScale) {
     bakedSizePx,
     bakedSizePx
   );
+}
+
+function renderAspectName(dir, projVert, boundScale) {
+  const { charge, cache } = aspects[dir];
+  const { x, y, scale } = projVert;
+  const localScale = scale * boundScale;
+  const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
 
   ctx.save();
   ctx.translate(x, y);
@@ -722,10 +762,14 @@ function render() {
   drawEdges(pv);
 
   for (const dir of sorted) {
-    renderSpiral(dir, p[dir], boundScale);
+    renderSpiralBase(dir, p[dir], boundScale);
   }
 
   drawDots(sorted, p);
+
+  for (const dir of sorted) {
+    renderAspectName(dir, p[dir], boundScale);
+  }
 
   ctx.font = '11px monospace';
   ctx.fillStyle = 'rgba(150,150,150,0.72)';
