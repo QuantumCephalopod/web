@@ -1,0 +1,325 @@
+function normalizeText(text) {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function smoothstep(a, b, x) {
+  const t = clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+}
+
+function easeInOut(t) {
+  return t * t * (3 - 2 * t);
+}
+
+function normalize3([x, y, z]) {
+  const m = Math.hypot(x, y, z) || 1;
+  return [x / m, y / m, z / m];
+}
+
+function qNormalize([w, x, y, z]) {
+  const m = Math.hypot(w, x, y, z) || 1;
+  return [w / m, x / m, y / m, z / m];
+}
+
+function qFromAxisAngle(axis, angle) {
+  const [ax, ay, az] = normalize3(axis);
+  const h = angle * 0.5;
+  const s = Math.sin(h);
+  return qNormalize([Math.cos(h), ax * s, ay * s, az * s]);
+}
+
+function qMul(a, b) {
+  return [
+    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+  ];
+}
+
+function qSlerp(a, b, t) {
+  let cosom = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+  let bb = b.slice();
+  if (cosom < 0) {
+    cosom = -cosom;
+    bb = [-b[0], -b[1], -b[2], -b[3]];
+  }
+  if (cosom > 0.9995) {
+    return qNormalize([
+      lerp(a[0], bb[0], t),
+      lerp(a[1], bb[1], t),
+      lerp(a[2], bb[2], t),
+      lerp(a[3], bb[3], t),
+    ]);
+  }
+  const omega = Math.acos(clamp(cosom, -1, 1));
+  const sinom = Math.sin(omega);
+  const s0 = Math.sin((1 - t) * omega) / sinom;
+  const s1 = Math.sin(t * omega) / sinom;
+  return [
+    a[0] * s0 + bb[0] * s1,
+    a[1] * s0 + bb[1] * s1,
+    a[2] * s0 + bb[2] * s1,
+    a[3] * s0 + bb[3] * s1,
+  ];
+}
+
+function qRotateVec(q, [x, y, z]) {
+  const qv = [0, x, y, z];
+  const qc = [q[0], -q[1], -q[2], -q[3]];
+  const r = qMul(qMul(q, qv), qc);
+  return [r[1], r[2], r[3]];
+}
+
+// Hydrate x_state variables using y_relation math now that it's loaded
+SWAP_AXIS = normalize3([1 / Math.SQRT2, 1 / Math.SQRT2, 0]);
+qA = [1, 0, 0, 0];
+qB = qFromAxisAngle(SWAP_AXIS, Math.PI);
+
+flipFrom = qA.slice();
+flipTo = qA.slice();
+flipMid = qA.slice();
+
+function qApplyToOrientation(baseQ, axis, angle) {
+  return qNormalize(qMul(qFromAxisAngle(axis, angle), baseQ));
+}
+
+function buildMidPose(baseFrom, vertex) {
+  const map = {
+    w: { axis: [1, 0, 0], angle: 0.62 },
+    y: { axis: [1, 0, 0], angle: -0.62 },
+    x: { axis: [0, 1, 0], angle: -0.62 },
+    z: { axis: [0, 1, 0], angle: 0.62 },
+  };
+  const cfg = map[vertex] || map.w;
+  return qApplyToOrientation(baseFrom, cfg.axis, cfg.angle);
+}
+
+function currentBaseOrientation() {
+  const t = easeInOut(flipProgress);
+  if (t < 0.5) {
+    return qSlerp(flipFrom, flipMid, t / 0.5);
+  }
+  return qSlerp(flipMid, flipTo, (t - 0.5) / 0.5);
+}
+
+function currentOrientation() {
+  const base = currentBaseOrientation();
+  const qTiltY = qFromAxisAngle([0, 1, 0], curRY);
+  const qTiltX = qFromAxisAngle([1, 0, 0], curRX);
+  return qMul(qTiltY, qMul(qTiltX, base));
+}
+
+function project([x, y, z]) {
+  const s = FOV / (FOV + z);
+  return { x: cx + x * s, y: cy + y * s, scale: s, z };
+}
+
+function getProjVerts() {
+  const out = {};
+  const q = currentOrientation();
+
+  for (const [dir, v] of Object.entries(verts3D)) {
+    const rv = qRotateVec(q, v);
+    out[dir] = { proj: project(rv), z: rv[2] };
+  }
+  return out;
+}
+
+function getProjVertsMap() {
+  const pv = getProjVerts();
+  const p = {};
+  for (const dir of ORDER) p[dir] = pv[dir].proj;
+  return p;
+}
+
+function computeBoundsScale(projMap) {
+  let required = 1;
+
+  for (const dir of ORDER) {
+    const { x, y, scale } = projMap[dir];
+    const armDx = x - cx;
+    const armDy = y - cy;
+    const armD = Math.hypot(armDx, armDy) || 1;
+    const ox = armDx / armD;
+    const oy = armDy / armD;
+    const cache = aspects[dir].cache;
+    const baseBound = cache.outerR * scale * NAME_WEIGHT + 12 * scale;
+
+    const ax = Math.abs(ox) < 1e-6 ? Infinity : (ox > 0 ? (W - VIEW_MARGIN - x) / ox : (VIEW_MARGIN - x) / ox);
+    const ay = Math.abs(oy) < 1e-6 ? Infinity : (oy > 0 ? (H - VIEW_MARGIN - y) / oy : (VIEW_MARGIN - y) / oy);
+    const availableAlongAxis = Math.min(ax, ay);
+
+    if (availableAlongAxis > 0 && Number.isFinite(availableAlongAxis)) {
+      required = Math.min(required, availableAlongAxis / baseBound);
+    }
+  }
+
+  return Math.max(0.68, Math.min(1, required));
+}
+
+function getStableBoundScale(rawBoundScale) {
+  const flipping = Math.abs(flipTarget - flipProgress) > 0.001;
+
+  if (flipping) {
+    boundScaleState = Math.min(boundScaleState, rawBoundScale);
+  } else {
+    boundScaleState += (rawBoundScale - boundScaleState) * 0.18;
+    if (Math.abs(rawBoundScale - boundScaleState) < 0.0005) {
+      boundScaleState = rawBoundScale;
+    }
+  }
+
+  return boundScaleState;
+}
+
+function buildSpiralLayout(name, text) {
+  const cleanText = text.replace(/-+$/, '').trim();
+  const normalizedName = normalizeText(name);
+  const normalizedBody = normalizeText(`· ${cleanText}`);
+  const nameChars = [...normalizedName].length;
+  const bodyChars = [...normalizedBody];
+  const glyphs = [];
+  const slotSize = CHAR_W + CHAR_GAP;
+
+  function advanceAt(turnPos, isName) {
+    const localSlot = slotSize * (isName ? NAME_SIZE_BOOST : 1);
+    const r = FIRST_ORBIT + SPIRAL_STEP * turnPos;
+    const arcFactor = Math.sqrt(r * r + SPIRAL_STEP * SPIRAL_STEP);
+    return localSlot / Math.max(arcFactor, 0.001);
+  }
+
+  let turnPos = 0;
+  let nameAngleSum = 0;
+  for (let i = 0; i < nameChars; i++) {
+    nameAngleSum += turnPos;
+    turnPos += advanceAt(turnPos, true);
+  }
+
+  const nameCenterOffset = nameChars > 0 ? nameAngleSum / nameChars : 0;
+  const thetaStart = -Math.PI / 2 - nameCenterOffset;
+
+  turnPos = 0;
+  for (const ch of [...normalizedName]) {
+    const theta = thetaStart + turnPos;
+    const r = FIRST_ORBIT + SPIRAL_STEP * turnPos;
+    glyphs.push({
+      char: ch,
+      cos: Math.cos(theta),
+      sin: Math.sin(theta),
+      rotation: theta + Math.PI / 2,
+      radius: r,
+      isName: true,
+    });
+    turnPos += advanceAt(turnPos, true);
+  }
+
+  const RADIAL_CLEARANCE_PX = 22;
+  turnPos += RADIAL_CLEARANCE_PX / SPIRAL_STEP;
+
+  let bodyTurn = turnPos;
+  const rawBodySlots = [];
+  let outerR = FIRST_ORBIT + SPIRAL_STEP * bodyTurn;
+
+  for (let i = 0; i < bodyChars.length; i++) {
+    rawBodySlots.push({ turn: bodyTurn, radius: FIRST_ORBIT + SPIRAL_STEP * bodyTurn });
+    outerR = FIRST_ORBIT + SPIRAL_STEP * bodyTurn;
+    bodyTurn += advanceAt(bodyTurn, false);
+  }
+
+  const outermostTurn = rawBodySlots.length ? rawBodySlots[rawBodySlots.length - 1].turn : turnPos;
+  const bodySlots = rawBodySlots.map(slot => {
+    const theta = -Math.PI / 2 + (outermostTurn - slot.turn);
+    return { theta, radius: slot.radius };
+  });
+
+  for (let i = 0; i < bodyChars.length; i++) {
+    const slot = bodySlots[bodySlots.length - 1 - i];
+    glyphs.push({
+      char: bodyChars[i],
+      cos: Math.cos(slot.theta),
+      sin: Math.sin(slot.theta),
+      rotation: slot.theta + Math.PI / 2,
+      radius: slot.radius,
+      isName: false,
+    });
+  }
+
+  return {
+    normalized: `${normalizedName} ${normalizedBody}`.trim(),
+    chars: glyphs.map(g => g.char),
+    glyphs,
+    outerR,
+    nameChars,
+    thetaStart,
+  };
+}
+
+function loadTerritoryData(territory) {
+  if (!window.FOUNDATION_DATA) return;
+  const items = window.FOUNDATION_DATA.filter(d => d.territory === territory);
+  if (items.length !== 4) return;
+  
+  const lights = items.filter(d => d.charge === 'light');
+  const shadows = items.filter(d => d.charge === 'shadow');
+  
+  currentTerritory = territory;
+  currentDomain = items[0].domain;
+
+  aspects = {
+    w: {
+      symbol: lights[0]?.aspect_symbol || '',
+      name: lights[0]?.aspect_name || '',
+      charge: 'light',
+      text: `${lights[0]?.create_aspect || ''}. ${lights[0]?.copy_aspect || ''}. ${lights[0]?.control_aspect || ''}`
+    },
+    y: {
+      symbol: lights[1]?.aspect_symbol || '',
+      name: lights[1]?.aspect_name || '',
+      charge: 'light',
+      text: `${lights[1]?.create_aspect || ''}. ${lights[1]?.copy_aspect || ''}. ${lights[1]?.control_aspect || ''}`
+    },
+    x: {
+      symbol: shadows[0]?.aspect_symbol || '',
+      name: shadows[0]?.aspect_name || '',
+      charge: 'shadow',
+      text: `${shadows[0]?.create_aspect || ''}. ${shadows[0]?.copy_aspect || ''}. ${shadows[0]?.control_aspect || ''}`
+    },
+    z: {
+      symbol: shadows[1]?.aspect_symbol || '',
+      name: shadows[1]?.aspect_name || '',
+      charge: 'shadow',
+      text: `${shadows[1]?.create_aspect || ''}. ${shadows[1]?.copy_aspect || ''}. ${shadows[1]?.control_aspect || ''}`
+    }
+  };
+
+  for (const dir of ORDER) {
+    aspects[dir].cache = buildSpiralLayout(aspects[dir].name, aspects[dir].text);
+    // Note: createSpiralBake must be loaded inside z_output.js or it will fail here.
+    // However, since loadTerritoryData is triggered after ALL scripts load, it is safe.
+    createSpiralBake(aspects[dir].cache);
+  }
+  
+  const pMap = getProjVertsMap();
+  boundScaleState = computeBoundsScale(pMap);
+  
+  fieldDirty = true;
+  requestRender();
+}
+
+function needsAnotherFrame() {
+  return (
+    Math.abs(flipTarget - flipProgress) > EPS ||
+    Math.abs(targetRX - curRX) > EPS ||
+    Math.abs(targetRY - curRY) > EPS ||
+    Math.abs(getStableBoundScale(computeBoundsScale(getProjVertsMap())) - boundScaleState) > EPS
+  );
+}
