@@ -1,39 +1,47 @@
 # Pretext Audit (April 7, 2026)
 
-## What Pretext is
+## Scope
 
-Pretext (`@chenglou/pretext`) is a text-measurement and line-layout library for cases where apps repeatedly measure dynamic multiline text and want to avoid DOM reflow costs.
+This audit checks Pretext usage in the two current projects:
 
-## Repo assessment
+- `f33lings/`
+- `moiré/`
 
-### Current usage
+## Findings
 
-- This repository does **not** currently include or call `@chenglou/pretext`.
-- There are no npm/package manifests in this repo, so no package-level dependency integration currently exists.
+### `f33lings/`: **Uses Pretext runtime**
 
-### Is that a problem here?
+`f33lings` explicitly loads the local runtime at `../pretext.js` from its entry loader, then routes UI text updates through a helper that prefers `window.pretext.apply(...)`.
 
-Mostly **no** for the current architecture:
+Observed usage:
 
-- The visual core renders text directly onto a `<canvas>` using precomputed glyph geometry and baked offscreen canvases.
-- The app does not rely on repeated DOM text measurement APIs (e.g., `getBoundingClientRect`, `offsetHeight`) for layout-critical paths.
+- Script load of `../pretext.js` in `f33lings/f33lings.js`.
+- `setPretextText(...)` helper in `f33lings/z_output.js`:
+  - Uses `window.pretext.apply(el, value)` when available.
+  - Falls back to `el.textContent = value` if Pretext is unavailable.
+- Helper is used for detail panel and sidecar text rendering (`detail-address`, `detail-symbol`, `detail-name`, `detail-essence`, `detail-create`, `detail-copy`, `detail-control`, domain and territory labels).
 
-That means the principal bottleneck that Pretext addresses is not present in the hottest rendering path.
+Assessment:
 
-## Correctness and efficiency guidance if Pretext is introduced later
+- Integration is **defensive and safe** (has fallback behavior).
+- Integration is currently **runtime-global** (`window.pretext`), not package-managed.
 
-If this app later needs dynamic multiline text sizing (chat bubbles, variable cards, rich editor blocks, etc.), use Pretext this way:
+### `moiré/`: **Uses Pretext for text layout/status text**
 
-1. Call `prepare(text, font, options?)` once per text+font pair.
-2. Reuse the prepared handle and call `layout(...)` across widths/resizes.
-3. Do **not** rerun `prepare(...)` on every frame/resize.
-4. Keep `font` and `lineHeight` synced with rendered styles.
-5. Prefer worker/off-main-thread usage when layout volume is high.
+`moiré/moiré.html` now loads `../pretext.js` and uses Pretext APIs for wrapping/layout decisions (`prepare` + `layout`) as well as status/button DOM text updates through a shared helper that prefers `window.pretext.apply(...)` with fallback.
 
-## Performance improvement implemented in this audit
+Assessment:
 
-The current architecture intentionally uses `f33lings/f33lings.js` as a project head router so `index.html` can remain stable while routing to different folder entrypoints over time.
+- Pretext is now integrated into this project's text pipeline for line layout and UI copy updates.
+- Canvas glyph drawing remains canvas-native (`fillText`) after Pretext-driven layout.
 
-To preserve that architecture, this audit does **not** replace the router with direct script tags.
+## Summary table
 
-Startup parallelization is now implemented within `f33lings.js` while preserving router architecture by injecting all child scripts immediately with `async = false` (parallel fetch + ordered execution). Optional resource hints in `index.html` can still be layered on later if needed.
+| Project | Pretext loaded? | Pretext called? | Notes |
+|---|---:|---:|---|
+| `f33lings/` | Yes | Yes | Uses `window.pretext.apply` with `textContent` fallback |
+| `moiré/` | Yes | Yes | Uses Pretext for wrapping/layout and DOM status/button copy |
+
+## Recommendation
+
+Keep fallback behavior (`textContent`) in both projects for resilience, but continue routing text layout/copy updates through Pretext by default.
