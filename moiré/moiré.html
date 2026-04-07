@@ -6,7 +6,7 @@
 <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0a0a0a; color: #ccc; font-family: monospace; padding: 16px; }
+  body { background: #0a0a0a; color: #ccc; font-family: monospace; padding: 56px 16px 16px; }
   .controls { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
   label { display: flex; flex-direction: column; font-size: 11px; color: #888; gap: 2px; }
   input[type=range] { width: 100px; accent-color: #666; }
@@ -75,7 +75,7 @@ The drawer stays open all day. Some spaces should be.</textarea>
 
 <canvas id="canvas"></canvas>
 
-<script src="../pretext.js"></script>
+<script src="../pretext-runtime.js"></script>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -308,6 +308,11 @@ function render(time = 0) {
 }
 
 render(0);
+window.addEventListener('pretext:ready', () => {
+  lineCache = null;
+  render(0);
+  updateGifInfo();
+});
 
 // ── GIF export ─────────────────────────────────────────────────────────────
 const GIF_FPS = 12;
