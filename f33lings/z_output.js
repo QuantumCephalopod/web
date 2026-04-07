@@ -359,26 +359,38 @@ function drawRipple(dir, p) {
 
 // ── Detail Panel ─────────────────────────────────────────────────────────────
 
+// Prefer pretext runtime for all UI copy blocks
+function setPretextText(el, value) {
+  if (!el) return;
+  if (window.pretext && typeof window.pretext.apply === 'function') {
+    window.pretext.apply(el, value);
+  } else {
+    el.textContent = value;
+  }
+}
+
 function showDetailPanel(dir) {
   const a   = aspects[dir];
   const panel = document.getElementById('detail-panel');
   if (!panel) return;
 
   // Address line: domain → territory → aspect
-  panel.querySelector('.detail-address').textContent =
-    `${a.domain} › ${a.territory} › ${a.name}`;
+  setPretextText(
+    panel.querySelector('.detail-address'),
+    `${a.domain} › ${a.territory} › ${a.name}`
+  );
 
   // Symbol + name header
-  panel.querySelector('.detail-symbol').textContent = a.symbol;
-  panel.querySelector('.detail-name').textContent   = a.name;
+  setPretextText(panel.querySelector('.detail-symbol'), a.symbol);
+  setPretextText(panel.querySelector('.detail-name'), a.name);
 
   // Essence line
-  panel.querySelector('.detail-essence').textContent = a.autonomous_essence;
+  setPretextText(panel.querySelector('.detail-essence'), a.autonomous_essence);
 
   // Three labeled sections
-  panel.querySelector('.detail-create').textContent  = a.create_aspect;
-  panel.querySelector('.detail-copy').textContent    = a.copy_aspect;
-  panel.querySelector('.detail-control').textContent = a.control_aspect;
+  setPretextText(panel.querySelector('.detail-create'), a.create_aspect);
+  setPretextText(panel.querySelector('.detail-copy'), a.copy_aspect);
+  setPretextText(panel.querySelector('.detail-control'), a.control_aspect);
 
   // Activate (CSS handles the opacity transition)
   panel.classList.add('active');
@@ -576,13 +588,13 @@ function initSidecar() {
     
     const title = document.createElement('div');
     title.className = 'domain-title';
-    title.textContent = domain;
+    setPretextText(title, domain);
     container.appendChild(title);
     
     terrSet.forEach(terr => {
       const div = document.createElement('div');
       div.className = 'territory-item';
-      div.textContent = terr;
+      setPretextText(div, terr);
       if (terr === currentTerritory) div.classList.add('active');
       
       div.onclick = () => {
