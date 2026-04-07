@@ -75,7 +75,7 @@ The drawer stays open all day. Some spaces should be.</textarea>
 
 <canvas id="canvas"></canvas>
 
-<script src="../pretext.js"></script>
+<script src="../pretext-runtime.js"></script>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
@@ -308,6 +308,11 @@ function render(time = 0) {
 }
 
 render(0);
+window.addEventListener('pretext:ready', () => {
+  lineCache = null;
+  render(0);
+  updateGifInfo();
+});
 
 // ── GIF export ─────────────────────────────────────────────────────────────
 const GIF_FPS = 12;

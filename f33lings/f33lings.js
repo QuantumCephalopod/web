@@ -1,7 +1,7 @@
 (function loadF33lingsProject() {
   const scripts = [
     '../data/foundation-aspects.js',
-    '../pretext.js',
+    '../pretext-runtime.js',
     'w_structure.js',
     'x_state.js',
     'y_relation.js',
