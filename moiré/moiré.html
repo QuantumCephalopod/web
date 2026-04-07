@@ -49,12 +49,22 @@
 
 <canvas id="canvas"></canvas>
 
+<script src="../pretext.js"></script>
 <script>
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
 let imgEl = null;
 let lumCache = null, lumW = 0, lumH = 0;
+
+function setPretextText(el, value) {
+  if (!el) return;
+  if (window.pretext && typeof window.pretext.apply === 'function') {
+    window.pretext.apply(el, value);
+  } else {
+    el.textContent = value;
+  }
+}
 
 // Per-line cache: normalized displacement + smoothed, rebuilt only when
 // image / fontSize / smoothing / invert change — not every animation frame.
@@ -166,26 +176,18 @@ function render(time = 0) {
   const font = `${fontSize}px monospace`;
   ctx.font = font;
   ctx.textBaseline = 'middle';
-  const charW      = ctx.measureText('M').width;
-  const effectiveW = Math.max(charW, W - 2 * padX);
-  const charsPerLine = Math.max(1, Math.floor(effectiveW / charW));
+  const effectiveW = Math.max(1, W - 2 * padX);
 
-  // Word-wrap: never cut mid-word, pad each line to charsPerLine
+  // Word-wrap through pretext when available; fallback keeps previous behavior.
   const flat  = text.replace(/\s+/g, ' ').trim();
-  const words = flat.split(' ');
-  const textLines = [];
-  let cur = '';
-  for (const word of words) {
-    if (!cur) {
-      cur = word;
-    } else if (cur.length + 1 + word.length <= charsPerLine) {
-      cur += ' ' + word;
-    } else {
-      textLines.push([...cur]);
-      cur = word;
-    }
+  let wrappedLines;
+  if (window.pretext && typeof window.pretext.prepare === 'function' && typeof window.pretext.layout === 'function') {
+    const prepared = window.pretext.prepare(flat || 'text', font);
+    wrappedLines = window.pretext.layout(prepared, { lineWidth: effectiveW });
+  } else {
+    wrappedLines = [flat || 'text'];
   }
-  if (cur) textLines.push([...cur]); // pre-split into char arrays
+  const textLines = wrappedLines.map(line => [...line]);
 
   const totalLines     = textLines.length;
   const effectiveLineH = H / totalLines;
@@ -294,7 +296,7 @@ function updateGifInfo() {
   const fpl    = framesPerLoop();
   const total  = loops * fpl;
   const secs   = (total / GIF_FPS).toFixed(1);
-  document.getElementById('gifInfo').textContent = `= ${total}f / ${secs}s`;
+  setPretextText(document.getElementById('gifInfo'), `= ${total}f / ${secs}s`);
 }
 
 document.getElementById('gifLoops').addEventListener('input', updateGifInfo);
@@ -343,7 +345,7 @@ document.getElementById('recordGif').addEventListener('click', async () => {
     tmp.getContext('2d').drawImage(canvas, 0, 0, fw, fh);
     frames.push({ c: tmp, delay });
 
-    btn.textContent = `${i + 1} / ${total} frames`;
+    setPretextText(btn, `${i + 1} / ${total} frames`);
     if (i % 8 === 7) await new Promise(r => setTimeout(r, 0)); // keep UI responsive
   }
 
@@ -363,7 +365,7 @@ document.getElementById('recordGif').addEventListener('click', async () => {
 });
 
 async function encodeAndSave(frames, btn) {
-  btn.textContent = 'encoding 0%';
+  setPretextText(btn, 'encoding 0%');
   const workerUrl = await ensureWorkerUrl();
   const { c: first } = frames[0];
 
@@ -378,7 +380,7 @@ async function encodeAndSave(frames, btn) {
   for (const { c, delay } of frames) gif.addFrame(c, { delay, copy: true });
 
   gif.on('progress', p => {
-    btn.textContent = `encoding ${Math.round(p * 100)}%`;
+    setPretextText(btn, `encoding ${Math.round(p * 100)}%`);
   });
 
   gif.on('finished', blob => {
@@ -386,7 +388,7 @@ async function encodeAndSave(frames, btn) {
     a.download = 'moiree.gif';
     a.href = URL.createObjectURL(blob);
     a.click();
-    btn.textContent = 'record GIF';
+    setPretextText(btn, 'record GIF');
     btn.disabled = false;
   });
 
