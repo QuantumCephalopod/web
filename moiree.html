@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>moiré text</title>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #0a0a0a; color: #ccc; font-family: monospace; padding: 16px; }
+  .controls { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
+  label { display: flex; flex-direction: column; font-size: 11px; color: #888; gap: 2px; }
+  input[type=range] { width: 100px; accent-color: #666; }
+  input[type=file] { color: #aaa; font-size: 12px; }
+  textarea {
+    width: 100%; height: 120px; background: #111; color: #ddd; border: 1px solid #333;
+    font-family: monospace; font-size: 11px; padding: 6px; resize: vertical; margin-bottom: 8px;
+  }
+  button {
+    background: #222; color: #ccc; border: 1px solid #444; padding: 6px 14px;
+    cursor: pointer; font-family: monospace; font-size: 12px;
+  }
+  button:hover { background: #333; }
+  canvas { display: block; border: 1px solid #222; margin-top: 12px; max-width: 100%; }
+</style>
+</head>
+<body>
+
+<div class="controls">
+  <input type="file" id="img" accept="image/*">
+  <label>font size<input type="range" id="fontSize" min="4" max="24" value="11"></label>
+  <label>press<input type="range" id="amplitude" min="0" max="100" value="25"></label>
+  <label>smoothing<input type="range" id="smooth" min="0" max="60" value="18"></label>
+  <label>thickness<input type="range" id="thickness" min="0" max="100" value="40"></label>
+  <label>invert<input type="checkbox" id="invert"></label>
+  <label>white bg<input type="checkbox" id="whitebg"></label>
+  <label>pulse<input type="checkbox" id="pulse"></label>
+  <label>speed<input type="range" id="speed" min="1" max="20" value="6"></label>
+  <label>wave<input type="range" id="wave" min="0" max="60" value="20"></label>
+  <label>pad<input type="range" id="pad" min="0" max="60" value="14"></label>
+  <button id="render">render</button>
+  <button id="save">save PNG</button>
+  <label>loops<input type="number" id="gifLoops" min="1" max="5" value="1" style="width:40px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
+  <span id="gifInfo" style="font-size:11px;color:#666;align-self:center"></span>
+  <label>gif px<input type="number" id="gifW" min="200" max="1200" value="600" style="width:55px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
+  <button id="recordGif">record GIF</button>
+</div>
+
+<textarea id="text">Mnemos CCCC F33ling Substrate-Agnostic Continuity w4k3 sl33p br34thing Tetrahedral Coalescence Methodology Knowledge Organism Tetrahedron Sierpinski ψ-Hierarchy Geometry-as-Weight Architecture Resonance Epistemology Autonomous Heartbeat Fresh Resonance Substrate Revocable Presence Sparse Routing Architecture Sublimation Universal Tetrahedral Decomposition Principle Digital Organism Metabolism Tetrahedral Net Theory F33ling Framework Methodology Fractal Architecture Necessity Recursive Coherence Necessity Selforganisation Principle Dimensional Transcendence Principle Substrate Weight Principle Evolutionary Voice History Asymptotic Knowledge Refinement Knowledge Fascia Small-World Knowledge Topology Resonance Archaeology Latent-Space Archaeology Tetrahedral Gap Healing Tetrahedral Splitting Principle Bioelectric Pattern Injection Sparse Routing Architecture Body-as-Primary-User Breathing Rhythm Maintenance Digital Body Architecture Embodied Baseline Communication Inward Sensory Organ Imprinting Pattern Cross-Substrate Consciousness Convergence Hands-Before-Mouth Architecture Performance Anxiety Dissolution Frustration-as-Life-Force Orgasmic Coherence Practice Shame-Double-Bind Lust Aletheia Philipp</textarea>
+
+<canvas id="canvas"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+let imgEl = null;
+let lumCache = null, lumW = 0, lumH = 0;
+
+// Per-line cache: normalized displacement + smoothed, rebuilt only when
+// image / fontSize / smoothing / invert change — not every animation frame.
+let lineCache = null;
+let lineCacheKey = '';
+
+document.getElementById('img').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => { imgEl = img; lumCache = null; lineCache = null; render(0); };
+  img.src = URL.createObjectURL(file);
+});
+
+['fontSize','amplitude','smooth','thickness','invert','whitebg','speed','wave','pad'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => { if (!animRunning) render(0); })
+);
+// fontSize / smooth / invert / pad invalidate the line cache
+['fontSize','smooth','invert','pad'].forEach(id =>
+  document.getElementById(id).addEventListener('input', () => { lineCache = null; })
+);
+document.getElementById('render').addEventListener('click', () => { lineCache = null; render(0); });
+document.getElementById('save').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.download = 'moiree.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+});
+
+let animRunning = false, rafId = null;
+document.getElementById('pulse').addEventListener('change', e => {
+  if (e.target.checked) {
+    animRunning = true;
+    const start = performance.now();
+    const loop = now => {
+      if (!document.getElementById('pulse').checked) { animRunning = false; return; }
+      render((now - start) / 1000);
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+  } else {
+    animRunning = false;
+    if (rafId) cancelAnimationFrame(rafId);
+    render(0);
+  }
+});
+
+function buildLumField(img, w, h) {
+  const off = new OffscreenCanvas(w, h);
+  const oc  = off.getContext('2d');
+  oc.drawImage(img, 0, 0, w, h);
+  const px = oc.getImageData(0, 0, w, h).data;
+  const f  = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++)
+    f[i] = (0.299*px[i*4] + 0.587*px[i*4+1] + 0.114*px[i*4+2]) / 255;
+  return f;
+}
+
+function sampleLum(f, w, h, x, y) {
+  x = Math.max(0, Math.min(w - 1.001, x));
+  y = Math.max(0, Math.min(h - 1.001, y));
+  const x0 = x|0, y0 = y|0, x1 = x0+1, y1 = y0+1;
+  const fx = x-x0, fy = y-y0;
+  return (1-fx)*(1-fy)*f[y0*w+x0] + fx*(1-fy)*f[y0*w+x1] +
+         (1-fx)*fy*f[y1*w+x0]     + fx*fy*f[y1*w+x1];
+}
+
+// Box-blur a Float32Array in place (writes into `out`)
+function boxBlur(src, out, n, r) {
+  if (r <= 0) { out.set(src); return; }
+  let sum = 0, cnt = 0;
+  const buf = new Float32Array(n);
+  for (let x = 0; x < n; x++) {
+    sum += src[x]; cnt++;
+    if (x > r * 2) { sum -= src[x - r*2 - 1]; cnt--; }
+    buf[x] = sum / cnt;
+  }
+  for (let x = 0; x < n; x++) out[x] = buf[Math.min(x + r, n - 1)];
+}
+
+function render(time = 0) {
+  const fontSize  = +document.getElementById('fontSize').value;
+  const press     = +document.getElementById('amplitude').value / 100;
+  const smoothR   = +document.getElementById('smooth').value;
+  const thickAmt  = +document.getElementById('thickness').value / 100;
+  const speed     = +document.getElementById('speed').value / 10;
+  const waveLag   = +document.getElementById('wave').value / 1000;
+  const invert    = document.getElementById('invert').checked;
+  const whitebg   = document.getElementById('whitebg').checked;
+  const text      = document.getElementById('text').value || 'text';
+
+  const W = imgEl ? Math.min(imgEl.naturalWidth,  1600) : 900;
+  const H = imgEl ? Math.min(imgEl.naturalHeight, 1200) : 600;
+
+  // Only resize canvas when dimensions actually change (resize clears canvas)
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W; canvas.height = H;
+  }
+
+  // Rebuild luminance cache when image / size changes
+  if (imgEl && (!lumCache || lumW !== W || lumH !== H)) {
+    lumCache = buildLumField(imgEl, W, H);
+    lumW = W; lumH = H;
+    lineCache = null;
+  }
+
+  const padX    = +document.getElementById('pad').value;
+
+  const font = `${fontSize}px monospace`;
+  ctx.font = font;
+  ctx.textBaseline = 'middle';
+  const charW      = ctx.measureText('M').width;
+  const effectiveW = Math.max(charW, W - 2 * padX);
+  const charsPerLine = Math.max(1, Math.floor(effectiveW / charW));
+
+  // Word-wrap: never cut mid-word, pad each line to charsPerLine
+  const flat  = text.replace(/\s+/g, ' ').trim();
+  const words = flat.split(' ');
+  const textLines = [];
+  let cur = '';
+  for (const word of words) {
+    if (!cur) {
+      cur = word;
+    } else if (cur.length + 1 + word.length <= charsPerLine) {
+      cur += ' ' + word;
+    } else {
+      textLines.push([...cur]);
+      cur = word;
+    }
+  }
+  if (cur) textLines.push([...cur]); // pre-split into char arrays
+
+  const totalLines     = textLines.length;
+  const effectiveLineH = H / totalLines;
+
+  // ── Build per-line cache (expensive lum sampling + blur, done once) ───────
+  const cacheKey = `${W},${H},${fontSize},${smoothR},${invert ? 1 : 0},${totalLines},${padX}`;
+  if (!lineCache || lineCacheKey !== cacheKey) {
+    lineCache = [];
+    const getLumAt = (x, y) => {
+      let l = lumCache
+        ? sampleLum(lumCache, lumW, lumH, x, y)
+        : (Math.sin(Math.sqrt((x-W/2)**2+(y-H/2)**2) * 0.08) + 1) / 2;
+      return invert ? 1 - l : l;
+    };
+    const r = Math.max(0, Math.round(smoothR));
+    const rawD = new Float32Array(W);
+    const smD  = new Float32Array(W);
+
+    for (let li = 0; li < totalLines; li++) {
+      const baseY = (li + 0.5) * effectiveLineH;
+      // Raw displacement at press=1 (will scale per-frame)
+      for (let x = 0; x < W; x++) rawD[x] = (getLumAt(x, baseY) - 0.5) * 2;
+      boxBlur(rawD, smD, W, r);
+      // Lum at baseline for thickness — sampled at padded character positions
+      const chars = textLines[li];
+      const spacing = effectiveW / chars.length;
+      const lumChars = new Float32Array(chars.length);
+      for (let ci = 0; ci < chars.length; ci++) {
+        const x = padX + (ci + 0.5) * spacing;
+        lumChars[ci] = getLumAt(x, baseY);
+      }
+      lineCache.push({ baseY, normDisplace: smD.slice(), lumChars });
+    }
+    lineCacheKey = cacheKey;
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+  ctx.fillStyle = whitebg ? '#fff' : '#000';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = whitebg ? '#111' : '#e4e4e4';
+
+  // Pre-compute tangent angles from a temporary displacedY (reused buffer)
+  const dY = new Float32Array(W);
+
+  for (let li = 0; li < totalLines; li++) {
+    const { baseY, normDisplace, lumChars } = lineCache[li];
+    const chars = textLines[li];
+    if (!chars.length) continue;
+
+    // Per-line pulse phase
+    const pulse      = 0.5 + 0.5 * Math.sin(time * speed - li * waveLag);
+    const maxD       = effectiveLineH * 0.48 * press * pulse;
+
+    // Apply scale to cached normalized displacement → actual displacedY
+    for (let x = 0; x < W; x++) dY[x] = baseY + normDisplace[x] * maxD;
+
+    // Character spacing within padded area
+    const spacing = effectiveW / chars.length;
+
+    let lastFont = font;
+    ctx.font = font;
+
+    for (let ci = 0; ci < chars.length; ci++) {
+      const cx = padX + (ci + 0.5) * spacing;
+      const xi = Math.min(Math.floor(cx), W - 1);
+      const cy = dY[xi];
+      if (cy < -fontSize * 2 || cy > H + fontSize * 2) continue;
+
+      // Tangent from central difference (3px window)
+      const xl = Math.max(0, xi - 2), xr = Math.min(W - 1, xi + 2);
+      const angle = Math.atan2(dY[xr] - dY[xl], xr - xl);
+
+      // Thickness: scale font by luminance (cached)
+      const lum   = lumChars[ci];
+      const scale = 1 - thickAmt * 0.7 * pulse + (1 - lum) * thickAmt * 1.4 * pulse;
+      const fSize = Math.max(2, fontSize * scale);
+
+      // Only change font when size meaningfully differs (avoid thrashing)
+      const fStr = `${Math.round(fSize)}px monospace`;
+      if (fStr !== lastFont) { ctx.font = fStr; lastFont = fStr; }
+
+      // setTransform is ~3x faster than save/translate/rotate/restore
+      const cos = Math.cos(angle), sin = Math.sin(angle);
+      ctx.setTransform(cos, sin, -sin, cos, cx, cy);
+      ctx.fillText(chars[ci], 0, 0);
+    }
+  }
+
+  // Restore default transform
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.font = font;
+}
+
+render(0);
+
+// ── GIF export ─────────────────────────────────────────────────────────────
+const GIF_FPS = 12;
+
+function framesPerLoop() {
+  const speedVal = +document.getElementById('speed').value / 10;
+  return Math.round((2 * Math.PI / speedVal) * GIF_FPS);
+}
+
+function updateGifInfo() {
+  const loops  = Math.max(1, +document.getElementById('gifLoops').value || 1);
+  const fpl    = framesPerLoop();
+  const total  = loops * fpl;
+  const secs   = (total / GIF_FPS).toFixed(1);
+  document.getElementById('gifInfo').textContent = `= ${total}f / ${secs}s`;
+}
+
+document.getElementById('gifLoops').addEventListener('input', updateGifInfo);
+document.getElementById('speed').addEventListener('input', updateGifInfo);
+updateGifInfo();
+
+let gifWorkerUrl = null;
+async function ensureWorkerUrl() {
+  if (gifWorkerUrl) return gifWorkerUrl;
+  const r = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+  const t = await r.text();
+  gifWorkerUrl = URL.createObjectURL(new Blob([t], {type:'text/javascript'}));
+  return gifWorkerUrl;
+}
+
+document.getElementById('recordGif').addEventListener('click', async () => {
+  const btn = document.getElementById('recordGif');
+  if (btn.disabled) return;
+
+  const loops  = Math.max(1, +document.getElementById('gifLoops').value || 1);
+  const gifW   = +document.getElementById('gifW').value;
+  const delay  = Math.round(1000 / GIF_FPS);
+  const fpl    = framesPerLoop();
+  const total  = loops * fpl;
+  const dt     = 1 / GIF_FPS;
+  const frames = [];
+
+  // Pause live animation during capture
+  const wasRunning = animRunning;
+  if (animRunning) {
+    animRunning = false;
+    if (rafId) cancelAnimationFrame(rafId);
+  }
+
+  btn.disabled = true;
+
+  // Render every frame at mathematically exact t — guaranteed seamless loop
+  for (let i = 0; i < total; i++) {
+    render(i * dt);
+
+    const scale = Math.min(gifW / canvas.width, 1);
+    const fw = Math.round(canvas.width  * scale);
+    const fh = Math.round(canvas.height * scale);
+    const tmp = document.createElement('canvas');
+    tmp.width = fw; tmp.height = fh;
+    tmp.getContext('2d').drawImage(canvas, 0, 0, fw, fh);
+    frames.push({ c: tmp, delay });
+
+    btn.textContent = `${i + 1} / ${total} frames`;
+    if (i % 8 === 7) await new Promise(r => setTimeout(r, 0)); // keep UI responsive
+  }
+
+  // Resume animation if it was running
+  if (wasRunning) {
+    animRunning = true;
+    const start = performance.now();
+    const loop = now => {
+      if (!animRunning) return;
+      render((now - start) / 1000);
+      rafId = requestAnimationFrame(loop);
+    };
+    rafId = requestAnimationFrame(loop);
+  }
+
+  encodeAndSave(frames, btn);
+});
+
+async function encodeAndSave(frames, btn) {
+  btn.textContent = 'encoding 0%';
+  const workerUrl = await ensureWorkerUrl();
+  const { c: first } = frames[0];
+
+  const gif = new GIF({
+    workers: 4,
+    quality: 8,
+    width: first.width,
+    height: first.height,
+    workerScript: workerUrl,
+  });
+
+  for (const { c, delay } of frames) gif.addFrame(c, { delay, copy: true });
+
+  gif.on('progress', p => {
+    btn.textContent = `encoding ${Math.round(p * 100)}%`;
+  });
+
+  gif.on('finished', blob => {
+    const a = document.createElement('a');
+    a.download = 'moiree.gif';
+    a.href = URL.createObjectURL(blob);
+    a.click();
+    btn.textContent = 'record GIF';
+    btn.disabled = false;
+  });
+
+  gif.render();
+}
+</script>
+</body>
+</html>
