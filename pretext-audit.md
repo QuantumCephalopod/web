@@ -37,8 +37,3 @@ The current architecture intentionally uses `f33lings/f33lings.js` as a project 
 To preserve that architecture, this audit does **not** replace the router with direct script tags.
 
 Startup parallelization is now implemented within `f33lings.js` while preserving router architecture by injecting all child scripts immediately with `async = false` (parallel fetch + ordered execution). Optional resource hints in `index.html` can still be layered on later if needed.
-
-
-## Runtime implementation status
-
-A local `pretext.js` runtime now powers UI copy layout (`window.pretext.prepare/layout/apply`) and all detail-panel + territory-label text writes in `z_output.js` are routed through this pretext pipeline.
