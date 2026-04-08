@@ -85,8 +85,24 @@ let lumCache = null, lumW = 0, lumH = 0;
 
 function setPretextText(el, value) {
   if (!el) return;
-  if (window.pretext && typeof window.pretext.apply === 'function') {
-    window.pretext.apply(el, value);
+
+  const pre = window.pretext;
+  const core = pre && pre.core;
+  if (core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function') {
+    const computed = getComputedStyle(el);
+    const fontSize = parseFloat(computed.fontSize) || 16;
+    const font = `${computed.fontSize} ${computed.fontFamily}`;
+    const lineWidth = Math.max(80, el.clientWidth || el.offsetWidth || 240);
+    const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.35;
+    const prepared = core.prepareWithSegments(String(value ?? ''), font, { whiteSpace: 'pre-wrap' });
+    const { lines } = core.layoutWithLines(prepared, lineWidth, lineHeight);
+    el.style.whiteSpace = 'pre-line';
+    el.textContent = lines.map((line) => line.text).join('\n');
+    return;
+  }
+
+  if (pre && typeof pre.apply === 'function') {
+    pre.apply(el, value);
   } else {
     el.textContent = value;
   }
@@ -204,10 +220,24 @@ function render(time = 0) {
   ctx.textBaseline = 'middle';
   const effectiveW = Math.max(1, W - 2 * padX);
 
-  // Word-wrap through pretext when available; fallback keeps previous behavior.
+  // Word-wrap through full pretext core API when available.
   const flat  = text.replace(/\s+/g, ' ').trim();
   let wrappedLines;
-  if (window.pretext && typeof window.pretext.prepare === 'function' && typeof window.pretext.layout === 'function') {
+  const core = window.pretext && window.pretext.core;
+  if (core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function') {
+    const prepared = core.prepareWithSegments(flat || 'text', font, { whiteSpace: 'pre-wrap' });
+    const stats = typeof core.measureLineStats === 'function'
+      ? core.measureLineStats(prepared, effectiveW)
+      : null;
+    const lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : Math.max(10, fontSize * 1.35);
+    const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
+    wrappedLines = lines.map((line) => line.text);
+
+    // Warm optional range-walker path so advanced APIs are exercised for this layout.
+    if (typeof core.walkLineRanges === 'function') {
+      core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
+    }
+  } else if (window.pretext && typeof window.pretext.prepare === 'function' && typeof window.pretext.layout === 'function') {
     const prepared = window.pretext.prepare(flat || 'text', font);
     wrappedLines = window.pretext.layout(prepared, { lineWidth: effectiveW });
   } else {
