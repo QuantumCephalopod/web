@@ -359,11 +359,27 @@ function drawRipple(dir, p) {
 
 // ── Detail Panel ─────────────────────────────────────────────────────────────
 
-// Prefer pretext runtime for all UI copy blocks
+// Prefer full pretext layout primitives for all UI copy blocks.
 function setPretextText(el, value) {
   if (!el) return;
-  if (window.pretext && typeof window.pretext.apply === 'function') {
-    window.pretext.apply(el, value);
+
+  const pre = window.pretext;
+  const core = pre && pre.core;
+  if (core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function') {
+    const computed = getComputedStyle(el);
+    const fontSize = parseFloat(computed.fontSize) || 16;
+    const font = `${computed.fontSize} ${computed.fontFamily}`;
+    const lineWidth = Math.max(80, el.clientWidth || el.offsetWidth || 240);
+    const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.35;
+    const prepared = core.prepareWithSegments(String(value ?? ''), font, { whiteSpace: 'pre-wrap' });
+    const { lines } = core.layoutWithLines(prepared, lineWidth, lineHeight);
+    el.style.whiteSpace = 'pre-line';
+    el.textContent = lines.map((line) => line.text).join('\n');
+    return;
+  }
+
+  if (pre && typeof pre.apply === 'function') {
+    pre.apply(el, value);
   } else {
     el.textContent = value;
   }
