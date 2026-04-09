@@ -19,7 +19,7 @@
 
   Promise.all([
     import(PRETEXT_ESM_URL),
-    import(PRETEXT_RICH_INLINE_ESM_URL).catch(() => null),
+    import(PRETEXT_RICH_INLINE_ESM_URL),
   ])
     .then(([corePkg, richInlinePkg]) => {
       const {
@@ -46,7 +46,7 @@
         materializeLineRange,
       };
 
-      const richInline = richInlinePkg || {};
+      const richInline = richInlinePkg;
 
       global.pretext = {
         core,
