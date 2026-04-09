@@ -271,8 +271,66 @@ function drawRipple(dir, p) {
 
 // ── Detail Panel ─────────────────────────────────────────────────────────────
 
+const DETAIL_FIELD_SELECTORS = {
+  address: '.detail-address',
+  symbol: '.detail-symbol',
+  name: '.detail-name',
+  essence: '.detail-essence',
+  create: '.detail-create',
+  copy: '.detail-copy',
+  control: '.detail-control'
+};
+
+const detailPanelState = {
+  panel: null,
+  fields: new Map(),
+  metrics: new Map(),
+  layoutCache: new Map(),
+  activeDir: null,
+  activeSignature: ''
+};
+
+function invalidateDetailPanelCache() {
+  detailPanelState.metrics.clear();
+  detailPanelState.layoutCache.clear();
+}
+
+window.addEventListener('resize', invalidateDetailPanelCache);
+
+function getDetailPanel() {
+  if (detailPanelState.panel && document.body.contains(detailPanelState.panel)) {
+    return detailPanelState.panel;
+  }
+
+  const panel = document.getElementById('detail-panel');
+  if (!panel) return null;
+
+  detailPanelState.panel = panel;
+  detailPanelState.fields.clear();
+  for (const [fieldId, selector] of Object.entries(DETAIL_FIELD_SELECTORS)) {
+    detailPanelState.fields.set(fieldId, panel.querySelector(selector));
+  }
+  invalidateDetailPanelCache();
+  return panel;
+}
+
+function getFieldMetrics(fieldId, el) {
+  let metrics = detailPanelState.metrics.get(fieldId);
+  if (metrics) return metrics;
+
+  const computed = getComputedStyle(el);
+  const fontSize = parseFloat(computed.fontSize) || 16;
+  const width = Math.max(80, el.clientWidth || el.offsetWidth || 240);
+  const font = `${computed.fontSize} ${computed.fontFamily}`;
+  const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.35;
+
+  metrics = { width, font, lineHeight };
+  detailPanelState.metrics.set(fieldId, metrics);
+  return metrics;
+}
+
 // Prefer full pretext layout primitives for all UI copy blocks.
-function setPretextText(el, value) {
+function setPretextText(el, value, fieldId = '') {
   if (!el) return;
 
   const raw = String(value ?? '');
@@ -283,15 +341,20 @@ function setPretextText(el, value) {
     el.textContent = raw;
     return;
   }
-  const computed = getComputedStyle(el);
-  const fontSize = parseFloat(computed.fontSize) || 16;
-  const font = `${computed.fontSize} ${computed.fontFamily}`;
-  const lineWidth = Math.max(80, el.clientWidth || el.offsetWidth || 240);
-  const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.35;
-  const prepared = core.prepareWithSegments(String(value ?? ''), font, { whiteSpace: 'pre-wrap' });
-  const { lines } = core.layoutWithLines(prepared, lineWidth, lineHeight);
+
+  const metrics = getFieldMetrics(fieldId, el);
+  const cacheKey = `${fieldId}§${raw}§${metrics.width}§${metrics.font}`;
+  let text = detailPanelState.layoutCache.get(cacheKey);
+
+  if (text === undefined) {
+    const prepared = core.prepareWithSegments(raw, metrics.font, { whiteSpace: 'pre-wrap' });
+    const { lines } = core.layoutWithLines(prepared, metrics.width, metrics.lineHeight);
+    text = lines.map((line) => line.text).join('\n');
+    detailPanelState.layoutCache.set(cacheKey, text);
+  }
+
   el.style.whiteSpace = 'pre-line';
-  el.textContent = lines.map((line) => line.text).join('\n');
+  el.textContent = text;
 }
 
 
@@ -302,27 +365,51 @@ function setPlainText(el, value) {
 }
 
 function showDetailPanel(dir) {
-  const a   = aspects[dir];
-  const panel = document.getElementById('detail-panel');
+  const a = aspects[dir];
+  const panel = getDetailPanel();
   if (!panel) return;
 
+  const nextContent = {
+    address: `${a.domain} › ${a.territory} › ${a.name}`,
+    symbol: a.symbol,
+    name: a.name,
+    essence: a.autonomous_essence,
+    create: a.create_aspect,
+    copy: a.copy_aspect,
+    control: a.control_aspect
+  };
+  const nextSignature = [
+    nextContent.address,
+    nextContent.symbol,
+    nextContent.name,
+    nextContent.essence,
+    nextContent.create,
+    nextContent.copy,
+    nextContent.control
+  ].join('§');
+
+  if (detailPanelState.activeDir === dir && detailPanelState.activeSignature === nextSignature) {
+    panel.classList.add('active');
+    return;
+  }
+
   // Address line: domain → territory → aspect
-  setPretextText(
-    panel.querySelector('.detail-address'),
-    `${a.domain} › ${a.territory} › ${a.name}`
-  );
+  setPretextText(detailPanelState.fields.get('address'), nextContent.address, 'address');
 
   // Symbol + name header
-  setPretextText(panel.querySelector('.detail-symbol'), a.symbol);
-  setPretextText(panel.querySelector('.detail-name'), a.name);
+  setPretextText(detailPanelState.fields.get('symbol'), nextContent.symbol, 'symbol');
+  setPretextText(detailPanelState.fields.get('name'), nextContent.name, 'name');
 
   // Essence line
-  setPretextText(panel.querySelector('.detail-essence'), a.autonomous_essence);
+  setPretextText(detailPanelState.fields.get('essence'), nextContent.essence, 'essence');
 
   // Three labeled sections
-  setPretextText(panel.querySelector('.detail-create'), a.create_aspect);
-  setPretextText(panel.querySelector('.detail-copy'), a.copy_aspect);
-  setPretextText(panel.querySelector('.detail-control'), a.control_aspect);
+  setPretextText(detailPanelState.fields.get('create'), nextContent.create, 'create');
+  setPretextText(detailPanelState.fields.get('copy'), nextContent.copy, 'copy');
+  setPretextText(detailPanelState.fields.get('control'), nextContent.control, 'control');
+
+  detailPanelState.activeDir = dir;
+  detailPanelState.activeSignature = nextSignature;
 
   // Activate (CSS handles the opacity transition)
   panel.classList.add('active');
