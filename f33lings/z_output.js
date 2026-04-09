@@ -230,11 +230,60 @@ function drawEmissionField(pv, p, boundScale) {
   ctx.drawImage(fieldCanvas, 0, 0, W, H);
 }
 
+function ensureSpiralTextBitmap(cache) {
+  if (cache.textBitmap) return cache.textBitmap;
+
+  const pad = FONT_SIZE * NAME_SIZE_BOOST * 2.4;
+  const size = Math.ceil(cache.outerR * 2 + pad * 2);
+  const bitmap = document.createElement('canvas');
+  bitmap.width = Math.max(2, size);
+  bitmap.height = Math.max(2, size);
+
+  const bctx = bitmap.getContext('2d');
+  const centerX = bitmap.width * 0.5;
+  const centerY = bitmap.height * 0.5;
+  const nameFont = `${FONT_SIZE * NAME_SIZE_BOOST}px monospace`;
+  const bodyFont = `${FONT_SIZE}px monospace`;
+
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  bctx.translate(centerX, centerY);
+  bctx.textBaseline = 'middle';
+  bctx.textAlign = 'center';
+  bctx.fillStyle = '#fff';
+
+  if (cache.nameGlyphs.length) {
+    bctx.font = nameFont;
+    for (const g of cache.nameGlyphs) {
+      bctx.setTransform(1, 0, 0, 1, centerX, centerY);
+      bctx.rotate(g.rotation);
+      bctx.fillText(g.char, g.radius, 0);
+    }
+  }
+
+  if (cache.bodyGlyphs.length) {
+    bctx.font = bodyFont;
+    for (const g of cache.bodyGlyphs) {
+      bctx.setTransform(1, 0, 0, 1, centerX, centerY);
+      bctx.rotate(g.rotation);
+      bctx.fillText(g.char, g.radius, 0);
+    }
+  }
+
+  bctx.setTransform(1, 0, 0, 1, 0, 0);
+  cache.textBitmap = {
+    canvas: bitmap,
+    offsetX: centerX,
+    offsetY: centerY,
+  };
+  return cache.textBitmap;
+}
+
 function renderSpiral(dir, projVert, boundScale) {
   const { charge, cache } = aspects[dir];
   const { x, y, scale } = projVert;
   const localScale = scale * boundScale;
   const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
+  const bitmap = ensureSpiralTextBitmap(cache);
 
   // Fade spiral out while ripple is active, fade back in when fading out
   let alpha = 1.0;
@@ -250,26 +299,21 @@ function renderSpiral(dir, projVert, boundScale) {
   }
 
   ctx.globalAlpha = alpha;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(localScale, localScale);
-  ctx.textBaseline = 'middle';
-  ctx.textAlign = 'center';
+  ctx.setTransform(
+    localScale * dpr,
+    0,
+    0,
+    localScale * dpr,
+    x * dpr,
+    y * dpr
+  );
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(bitmap.canvas, -bitmap.offsetX, -bitmap.offsetY);
+  ctx.globalCompositeOperation = 'source-atop';
   ctx.fillStyle = textFill;
-
-  // Geometry-first rendering: glyph coordinates stay in spiral space,
-  // then the whole spiral is transformed in one pass.
-  for (const g of cache.glyphs) {
-    ctx.save();
-    ctx.translate(g.baseX, g.baseY);
-    ctx.rotate(g.rotation);
-    const glyphScale = g.isName ? NAME_SIZE_BOOST : 1;
-    ctx.font = `${FONT_SIZE * glyphScale}px monospace`;
-    ctx.fillText(g.char, 0, 0);
-    ctx.restore();
-  }
-
-  ctx.restore();
+  ctx.fillRect(-bitmap.offsetX, -bitmap.offsetY, bitmap.canvas.width, bitmap.canvas.height);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalAlpha = 1.0;
 }
 

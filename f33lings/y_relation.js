@@ -188,6 +188,8 @@ function buildSpiralLayout(name, text) {
   const nameChars = [...normalizedName].length;
   const bodyChars = [...normalizedBody];
   const glyphs = [];
+  const nameGlyphs = [];
+  const bodyGlyphs = [];
   const slotSize = CHAR_W + CHAR_GAP;
 
   function advanceAt(turnPos, isName) {
@@ -211,7 +213,7 @@ function buildSpiralLayout(name, text) {
   for (const ch of [...normalizedName]) {
     const theta = thetaStart + turnPos;
     const r = FIRST_ORBIT + SPIRAL_STEP * turnPos;
-    glyphs.push({
+    const glyph = {
       char: ch,
       cos: Math.cos(theta),
       sin: Math.sin(theta),
@@ -220,7 +222,9 @@ function buildSpiralLayout(name, text) {
       isName: true,
       baseX: Math.cos(theta) * r,
       baseY: Math.sin(theta) * r,
-    });
+    };
+    glyphs.push(glyph);
+    nameGlyphs.push(glyph);
     turnPos += advanceAt(turnPos, true);
   }
 
@@ -245,7 +249,7 @@ function buildSpiralLayout(name, text) {
 
   for (let i = 0; i < bodyChars.length; i++) {
     const slot = bodySlots[bodySlots.length - 1 - i];
-    glyphs.push({
+    const glyph = {
       char: bodyChars[i],
       cos: Math.cos(slot.theta),
       sin: Math.sin(slot.theta),
@@ -254,13 +258,17 @@ function buildSpiralLayout(name, text) {
       isName: false,
       baseX: Math.cos(slot.theta) * slot.radius,
       baseY: Math.sin(slot.theta) * slot.radius,
-    });
+    };
+    glyphs.push(glyph);
+    bodyGlyphs.push(glyph);
   }
 
   return {
     normalized: `${normalizedName} ${normalizedBody}`.trim(),
     chars: glyphs.map(g => g.char),
     glyphs,
+    nameGlyphs,
+    bodyGlyphs,
     outerR,
     nameChars,
     thetaStart,
