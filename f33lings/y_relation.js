@@ -318,6 +318,6 @@ function needsAnotherFrame() {
     Math.abs(flipTarget - flipProgress) > EPS ||
     Math.abs(targetRX - curRX) > EPS ||
     Math.abs(targetRY - curRY) > EPS ||
-    Math.abs(getStableBoundScale(computeBoundsScale(getProjVertsMap())) - boundScaleState) > EPS
+    Math.abs(computeBoundsScale(getProjVertsMap()) - boundScaleState) > EPS
   );
 }

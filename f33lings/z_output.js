@@ -275,9 +275,14 @@ function drawRipple(dir, p) {
 function setPretextText(el, value) {
   if (!el) return;
 
+  const raw = String(value ?? '');
   const pre = window.pretext;
   const core = pre && pre.core;
-  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') return;
+  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') {
+    el.style.whiteSpace = 'normal';
+    el.textContent = raw;
+    return;
+  }
   const computed = getComputedStyle(el);
   const fontSize = parseFloat(computed.fontSize) || 16;
   const font = `${computed.fontSize} ${computed.fontFamily}`;
@@ -287,6 +292,13 @@ function setPretextText(el, value) {
   const { lines } = core.layoutWithLines(prepared, lineWidth, lineHeight);
   el.style.whiteSpace = 'pre-line';
   el.textContent = lines.map((line) => line.text).join('\n');
+}
+
+
+function setPlainText(el, value) {
+  if (!el) return;
+  el.style.whiteSpace = 'normal';
+  el.textContent = String(value ?? '');
 }
 
 function showDetailPanel(dir) {
@@ -507,13 +519,13 @@ function initSidecar() {
     
     const title = document.createElement('div');
     title.className = 'domain-title';
-    setPretextText(title, domain);
+    setPlainText(title, domain);
     container.appendChild(title);
     
     terrSet.forEach(terr => {
       const div = document.createElement('div');
       div.className = 'territory-item';
-      setPretextText(div, terr);
+      setPlainText(div, terr);
       if (terr === currentTerritory) div.classList.add('active');
       
       div.onclick = () => {
