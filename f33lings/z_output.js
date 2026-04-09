@@ -230,8 +230,9 @@ function drawEmissionField(pv, p, boundScale) {
   ctx.drawImage(fieldCanvas, 0, 0, W, H);
 }
 
-function ensureSpiralTextBitmap(cache) {
-  if (cache.textBitmap) return cache.textBitmap;
+function ensureSpiralTextBitmap(cache, textFill) {
+  const cacheKey = textFill === DARK_TEXT ? 'textBitmapDark' : 'textBitmapLight';
+  if (cache[cacheKey]) return cache[cacheKey];
 
   const pad = FONT_SIZE * NAME_SIZE_BOOST * 2.4;
   const size = Math.ceil(cache.outerR * 2 + pad * 2);
@@ -249,7 +250,7 @@ function ensureSpiralTextBitmap(cache) {
   bctx.translate(centerX, centerY);
   bctx.textBaseline = 'middle';
   bctx.textAlign = 'center';
-  bctx.fillStyle = '#fff';
+  bctx.fillStyle = textFill;
 
   if (cache.nameGlyphs.length) {
     bctx.font = nameFont;
@@ -270,12 +271,13 @@ function ensureSpiralTextBitmap(cache) {
   }
 
   bctx.setTransform(1, 0, 0, 1, 0, 0);
-  cache.textBitmap = {
+  const textBitmap = {
     canvas: bitmap,
     offsetX: centerX,
     offsetY: centerY,
   };
-  return cache.textBitmap;
+  cache[cacheKey] = textBitmap;
+  return textBitmap;
 }
 
 function renderSpiral(dir, projVert, boundScale) {
@@ -283,7 +285,7 @@ function renderSpiral(dir, projVert, boundScale) {
   const { x, y, scale } = projVert;
   const localScale = scale * boundScale;
   const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
-  const bitmap = ensureSpiralTextBitmap(cache);
+  const bitmap = ensureSpiralTextBitmap(cache, textFill);
 
   // Fade spiral out while ripple is active, fade back in when fading out
   let alpha = 1.0;
@@ -309,10 +311,6 @@ function renderSpiral(dir, projVert, boundScale) {
   );
   ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(bitmap.canvas, -bitmap.offsetX, -bitmap.offsetY);
-  ctx.globalCompositeOperation = 'source-atop';
-  ctx.fillStyle = textFill;
-  ctx.fillRect(-bitmap.offsetX, -bitmap.offsetY, bitmap.canvas.width, bitmap.canvas.height);
-  ctx.globalCompositeOperation = 'source-over';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.globalAlpha = 1.0;
 }
