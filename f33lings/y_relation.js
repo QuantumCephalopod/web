@@ -218,6 +218,8 @@ function buildSpiralLayout(name, text) {
       rotation: theta + Math.PI / 2,
       radius: r,
       isName: true,
+      baseX: Math.cos(theta) * r,
+      baseY: Math.sin(theta) * r,
     });
     turnPos += advanceAt(turnPos, true);
   }
@@ -250,6 +252,8 @@ function buildSpiralLayout(name, text) {
       rotation: slot.theta + Math.PI / 2,
       radius: slot.radius,
       isName: false,
+      baseX: Math.cos(slot.theta) * slot.radius,
+      baseY: Math.sin(slot.theta) * slot.radius,
     });
   }
 
@@ -300,9 +304,6 @@ function loadTerritoryData(territory) {
 
   for (const dir of ORDER) {
     aspects[dir].cache = buildSpiralLayout(aspects[dir].name, aspects[dir].text);
-    // Note: createSpiralBake must be loaded inside z_output.js or it will fail here.
-    // However, since loadTerritoryData is triggered after ALL scripts load, it is safe.
-    createSpiralBake(aspects[dir].cache);
   }
   
   const pMap = getProjVertsMap();

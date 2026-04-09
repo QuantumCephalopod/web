@@ -13,40 +13,6 @@ function rebuildFieldBuffer() {
   fieldDirty = true;
 }
 
-function createSpiralBake(cache) {
-  function makeBake(fillStyle) {
-    const off = document.createElement('canvas');
-    off.width = SPIRAL_BAKE_SIZE;
-    off.height = SPIRAL_BAKE_SIZE;
-    const octx = off.getContext('2d');
-    const ox = off.width / 2;
-    const oy = off.height / 2;
-
-    octx.textBaseline = 'middle';
-    octx.textAlign = 'center';
-    octx.fillStyle = fillStyle;
-
-    for (let i = cache.nameChars; i < cache.glyphs.length; i++) {
-      const g = cache.glyphs[i];
-      const px = g.cos * g.radius;
-      const py = g.sin * g.radius;
-      octx.save();
-      octx.translate(ox + px, oy + py);
-      octx.rotate(g.rotation);
-      octx.font = `${FONT_SIZE}px monospace`;
-      octx.fillText(g.char, 0, 0);
-      octx.restore();
-    }
-
-    return off;
-  }
-
-  cache.bakeCanvasDark = makeBake(DARK_TEXT);
-  cache.bakeCanvasLight = makeBake(LIGHT_TEXT);
-  cache.bakeHalf = SPIRAL_BAKE_SIZE / 2;
-  cache.bakeRadius = cache.outerR + SPIRAL_BAKE_MARGIN;
-}
-
 function requestRender() {
   if (!rafId) rafId = requestAnimationFrame(render);
 }
@@ -224,16 +190,11 @@ function drawEmissionField(pv, p, boundScale) {
   ctx.drawImage(fieldCanvas, 0, 0, W, H);
 }
 
-function renderSpiralBase(dir, projVert, boundScale) {
+function renderSpiral(dir, projVert, boundScale) {
   const { charge, cache } = aspects[dir];
   const { x, y, scale } = projVert;
   const localScale = scale * boundScale;
-  const bakedRadiusPx = cache.bakeRadius * localScale;
-  const bakedSizePx = bakedRadiusPx * 2;
-  const srcHalf = cache.bakeRadius;
-  const srcSize = srcHalf * 2;
-
-  const bakeCanvas = charge === 'light' ? cache.bakeCanvasDark : cache.bakeCanvasLight;
+  const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
 
   // Fade spiral out while ripple is active, fade back in when fading out
   let alpha = 1.0;
@@ -247,72 +208,23 @@ function renderSpiralBase(dir, projVert, boundScale) {
       alpha = clamp(1.0 - easeInOut(t) * 0.92, 0.08, 1);
     }
   }
+
   ctx.globalAlpha = alpha;
-
-  ctx.drawImage(
-    bakeCanvas,
-    cache.bakeHalf - srcHalf,
-    cache.bakeHalf - srcHalf,
-    srcSize,
-    srcSize,
-    x - bakedRadiusPx,
-    y - bakedRadiusPx,
-    bakedSizePx,
-    bakedSizePx
-  );
-  
-  ctx.globalAlpha = 1.0;
-}
-
-function renderAspectName(dir, projVert, boundScale) {
-  const { charge, cache } = aspects[dir];
-  const { x, y, scale } = projVert;
-  const localScale = scale * boundScale;
-  const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
-
-  // Mirror the spiral alpha so name text fades in sync
-  let alpha = 1.0;
-  if (activeRippleVertex === dir) {
-    const now = performance.now();
-    if (rippleFadeOut) {
-      const t = clamp((now - rippleFadeStartTime) / (RIPPLE_DURATION_MS * 0.6), 0, 1);
-      alpha = clamp(0.08 + easeInOut(t) * 0.92, 0, 1);
-    } else {
-      const t = clamp((now - rippleStartTime) / (RIPPLE_DURATION_MS * 0.7), 0, 1);
-      alpha = clamp(1.0 - easeInOut(t) * 0.92, 0.08, 1);
-    }
-  }
-  ctx.globalAlpha = alpha;
-
   ctx.save();
   ctx.translate(x, y);
+  ctx.scale(localScale, localScale);
   ctx.textBaseline = 'middle';
   ctx.textAlign = 'center';
   ctx.fillStyle = textFill;
 
-  const hoverEnabled = mouseInside && Math.abs(flipTarget - flipProgress) < 0.001 && hoverVertex === dir;
-
-  for (let i = 0; i < cache.nameChars; i++) {
-    const g = cache.glyphs[i];
-    let px = g.cos * g.radius * localScale;
-    let py = g.sin * g.radius * localScale;
-    const rotation = g.rotation;
-    const glyphFs = FONT_SIZE * scale * NAME_SIZE_BOOST;
-
-    const gx = x + px;
-    const gy = y + py;
-    const d = Math.hypot(mouseX - gx, mouseY - gy);
-    const t = hoverEnabled ? Math.max(0, 1 - d / NAME_PROX_RADIUS) : 0;
-    const eased = t * t;
-    const extraAlong = eased * NAME_GAP_BOOST * scale;
-    const extraRadial = eased * NAME_RADIAL_BOOST * scale;
-    px += Math.cos(rotation) * extraAlong + g.cos * extraRadial;
-    py += Math.sin(rotation) * extraAlong + g.sin * extraRadial;
-
+  // Geometry-first rendering: glyph coordinates stay in spiral space,
+  // then the whole spiral is transformed in one pass.
+  for (const g of cache.glyphs) {
     ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(rotation);
-    ctx.font = `${glyphFs}px monospace`;
+    ctx.translate(g.baseX, g.baseY);
+    ctx.rotate(g.rotation);
+    const glyphScale = g.isName ? NAME_SIZE_BOOST : 1;
+    ctx.font = `${FONT_SIZE * glyphScale}px monospace`;
     ctx.fillText(g.char, 0, 0);
     ctx.restore();
   }
@@ -537,7 +449,7 @@ function render() {
   const sorted = ORDER.slice().sort((a, b) => pv[a].z - pv[b].z);
 
   for (const dir of sorted) {
-    renderSpiralBase(dir, p[dir], boundScale);
+    renderSpiral(dir, p[dir], boundScale);
   }
 
   drawDots(sorted, p);
@@ -545,7 +457,6 @@ function render() {
   for (const dir of sorted) {
     // Draw ripple rings above spirals, below dots
     if (dir === activeRippleVertex) drawRipple(dir, p);
-    renderAspectName(dir, p[dir], boundScale);
   }
 
   const CAPTION_Y = cy + ARM + 72;
