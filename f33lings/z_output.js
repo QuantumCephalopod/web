@@ -219,13 +219,12 @@ function renderSpiral(dir, projVert, boundScale) {
 
   // Geometry-first rendering: glyph coordinates stay in spiral space,
   // then the whole spiral is transformed in one pass.
-  const bodyFont = `${FONT_SIZE}px monospace`;
-  const nameFont = `${FONT_SIZE * NAME_SIZE_BOOST}px monospace`;
   for (const g of cache.glyphs) {
     ctx.save();
     ctx.translate(g.baseX, g.baseY);
     ctx.rotate(g.rotation);
-    ctx.font = g.isName ? nameFont : bodyFont;
+    const glyphScale = g.isName ? NAME_SIZE_BOOST : 1;
+    ctx.font = `${FONT_SIZE * glyphScale}px monospace`;
     ctx.fillText(g.char, 0, 0);
     ctx.restore();
   }
