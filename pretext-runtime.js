@@ -1,5 +1,6 @@
 (function initPretextRuntime(global) {
   const PRETEXT_ESM_URL = 'https://cdn.jsdelivr.net/npm/@chenglou/pretext/+esm';
+  const PRETEXT_RICH_INLINE_ESM_URL = 'https://cdn.jsdelivr.net/npm/@chenglou/pretext/rich-inline/+esm';
 
   function px(value, fallback) {
     const n = parseFloat(value);
@@ -16,21 +17,43 @@
     return String(value ?? '').replace(/\s+/g, ' ').trim();
   }
 
-  import(PRETEXT_ESM_URL)
-    .then((pkg) => {
+  Promise.all([
+    import(PRETEXT_ESM_URL),
+    import(PRETEXT_RICH_INLINE_ESM_URL).catch(() => null),
+  ])
+    .then(([corePkg, richInlinePkg]) => {
       const {
         prepare,
         prepareWithSegments,
         layoutWithLines,
-      } = pkg;
+        measureLineStats,
+        walkLineRanges,
+        layoutNextLineRange,
+        materializeLineRange,
+      } = corePkg;
 
       function ensurePreparedForLines(text, font, options = {}) {
         return prepareWithSegments(String(text ?? ''), font, options);
       }
 
+      const core = {
+        prepare,
+        prepareWithSegments,
+        layoutWithLines,
+        measureLineStats,
+        walkLineRanges,
+        layoutNextLineRange,
+        materializeLineRange,
+      };
+
+      const richInline = richInlinePkg || {};
+
       global.pretext = {
+        core,
+        richInline,
+
+        // Legacy aliases preserved for older callsites.
         prepare(text, font, options = {}) {
-          // Keep existing callsites compatible while using official Pretext.
           return ensurePreparedForLines(normalizeText(text), font, options);
         },
 
@@ -52,12 +75,6 @@
           const { lines } = layoutWithLines(prepared, lineWidth, lineHeight);
           element.style.whiteSpace = 'pre-line';
           element.textContent = lines.map((line) => line.text).join('\n');
-        },
-
-        raw: {
-          prepare,
-          prepareWithSegments,
-          layoutWithLines,
         },
       };
 

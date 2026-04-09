@@ -1,47 +1,127 @@
-# Pretext Audit (April 7, 2026)
+# Pretext Audit + Feature Documentation (April 8, 2026)
 
 ## Scope
 
-This audit checks Pretext usage in the two current projects:
+This document covers:
 
-- `f33lings/`
-- `moiré/`
+- How Pretext is currently used in this repository.
+- A practical documentation summary of official Pretext features from the upstream `chenglou/pretext` repository.
 
-## Findings
+## Current Integration in This Repo
 
-### `f33lings/`: **Uses official Pretext package via runtime adapter**
+### `f33lings/`
 
-`f33lings` now loads `../pretext-runtime.js` from its entry loader. That runtime adapter imports `@chenglou/pretext` from jsDelivr ESM and exposes a compatibility surface on `window.pretext` for existing call sites.
+- Loads `../pretext-runtime.js` from `f33lings/f33lings.js`.
+- Uses `setPretextText(...)` in `f33lings/z_output.js`.
+- Current helper behavior:
+  - Prefers core APIs (`window.pretext.core.prepareWithSegments` + `layoutWithLines`) for text layout.
+  - Falls back to `window.pretext.apply(...)` then `textContent`.
 
-Observed usage:
+### `moiré/`
 
-- Script load of `../pretext-runtime.js` in `f33lings/f33lings.js`.
-- `setPretextText(...)` helper in `f33lings/z_output.js`:
-  - Uses `window.pretext.apply(el, value)` when available.
-  - Falls back to `el.textContent = value` if Pretext is unavailable.
-- Helper is used for detail panel and sidecar text rendering (`detail-address`, `detail-symbol`, `detail-name`, `detail-essence`, `detail-create`, `detail-copy`, `detail-control`, domain and territory labels).
+- Loads `../pretext-runtime.js` in `moiré/moiré.html`.
+- Uses Pretext core APIs for:
+  - Text wrapping (`prepareWithSegments` + `layoutWithLines`).
+  - Line statistics (`measureLineStats`) where available.
+  - Range walker (`walkLineRanges`) where available.
+- Also uses the same DOM helper strategy for button/status text.
 
-Assessment:
+### Runtime Adapter (`pretext-runtime.js`)
 
-- Integration is **defensive and safe** (has fallback behavior).
-- Integration is **package-backed** (`@chenglou/pretext`) through a browser runtime adapter.
+- Imports `@chenglou/pretext` from jsDelivr ESM.
+- Exposes:
+  - `window.pretext.core` (official core APIs)
+  - `window.pretext.richInline` (optional rich-inline helper package)
+  - Compatibility aliases (`prepare`, `layout`, `apply`)
 
-### `moiré/`: **Uses official Pretext package for text layout/status text**
+---
 
-`moiré/moiré.html` now loads `../pretext-runtime.js` and uses Pretext APIs for wrapping/layout decisions (`prepare` + `layout`) as well as status/button DOM text updates through a shared helper that prefers `window.pretext.apply(...)` with fallback.
+## Official Pretext Feature Documentation (Upstream Summary)
 
-Assessment:
+> Source of truth: `https://github.com/chenglou/pretext` (README/API section).
 
-- Pretext is integrated into this project's text pipeline for line layout and UI copy updates.
-- Canvas glyph drawing remains canvas-native (`fillText`) after Pretext-driven layout.
+## 1) Core purpose
 
-## Summary table
+Pretext is a JavaScript/TypeScript multiline text measurement + layout engine that avoids repeated DOM measurement/reflow (`getBoundingClientRect`, `offsetHeight`) by precomputing text/font data and running layout as arithmetic.
 
-| Project | Pretext loaded? | Pretext called? | Notes |
-|---|---:|---:|---|
-| `f33lings/` | Yes | Yes | Uses `window.pretext.apply` with `textContent` fallback |
-| `moiré/` | Yes | Yes | Uses Pretext for wrapping/layout and DOM status/button copy |
+## 2) Two primary API workflows
 
-## Recommendation
+### A. Measure paragraph height quickly (DOM-free)
 
-Keep fallback behavior (`textContent`) in both projects for resilience, while defaulting to official Pretext via the runtime adapter.
+- `prepare(text, font, options?)`
+- `layout(prepared, maxWidth, lineHeight)`
+
+Use this when you mainly need **height/line count** for a given width.
+
+Common options:
+
+- `whiteSpace: 'normal' | 'pre-wrap'`
+- `wordBreak: 'normal' | 'keep-all'`
+
+### B. Manual line layout / custom rendering pipelines
+
+- `prepareWithSegments(text, font, options?)`
+- `layoutWithLines(prepared, maxWidth, lineHeight)`
+
+Use this when you need line text + cursors for Canvas/SVG/WebGL/manual DOM rendering.
+
+## 3) Measurement + shrink-wrap helpers
+
+- `measureLineStats(prepared, maxWidth)`
+  - Returns `{ lineCount, maxLineWidth }` without line text allocations.
+- `walkLineRanges(prepared, maxWidth, onLine)`
+  - Walks line ranges/cursors and widths without materializing strings.
+- `measureNaturalWidth(prepared)`
+  - Returns natural widest forced line when wrapping width is not the limiter.
+
+These are useful for balanced layout, binary-search width fitting, and true multiline shrink-wrap.
+
+## 4) Variable-width / obstacle-aware flow
+
+- `layoutNextLineRange(prepared, startCursor, maxWidth)`
+- `materializeLineRange(prepared, lineRange)`
+- (Also available: `layoutNextLine(...)`)
+
+This enables per-row width changes (e.g., text flowing around images/shapes), where each subsequent line can be laid out with a different width.
+
+## 5) Rich inline helper package
+
+From `@chenglou/pretext/rich-inline`:
+
+- `prepareRichInline(items)`
+- `layoutNextRichInlineLineRange(prepared, maxWidth, start?)`
+- `walkRichInlineLineRanges(prepared, maxWidth, onLine)`
+- `materializeRichInlineLineRange(prepared, range)`
+- `measureRichInlineStats(prepared, maxWidth)`
+
+`RichInlineItem` supports:
+
+- `text`
+- `font`
+- `break?: 'normal' | 'never'`
+- `extraWidth?` (for pill/chip chrome, padding, borders)
+
+Intended scope is intentionally narrow: inline flow (`white-space: normal`) for chips/mentions/code spans and similar mixed-inline content.
+
+## 6) Recommended usage patterns from upstream API design
+
+- Treat `prepare*` as a one-time precompute step.
+- Re-run `layout*` many times (e.g., on resize/animation/what-if width tests).
+- Prefer stats/range walkers when you only need counts/widths, not full strings.
+- Materialize strings only at final render boundaries.
+
+## 7) Practical limitations to keep in mind
+
+Based on upstream docs/readme guidance:
+
+- Fonts should be loaded before preparing text.
+- `prepare*` has non-zero upfront cost; keep it off critical hot UI path when possible.
+- Rich-inline helper is not a full nested HTML/CSS inline formatting engine.
+
+---
+
+## Links
+
+- GitHub repo (official): https://github.com/chenglou/pretext
+- npm package: https://www.npmjs.com/package/@chenglou/pretext
+- rich-inline package path: `@chenglou/pretext/rich-inline`
