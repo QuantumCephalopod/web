@@ -2,11 +2,42 @@ const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const fieldCanvas = document.createElement('canvas');
 const fieldCtx = fieldCanvas.getContext('2d', { alpha: false });
+const FIELD_BASE_RES = 180;
+const FIELD_MIN_RES = 96;
+const FIELD_LOW_QUALITY = 0.64;
+const FIELD_ROT_DIRTY_THRESHOLD = 0.003;
+const FIELD_FLIP_DIRTY_THRESHOLD = 0.004;
+const FIELD_MOTION_ENTER_THRESHOLD = 0.0014;
+const FIELD_MOTION_EXIT_THRESHOLD = 0.00045;
+const EXP_LUT_MAX = 14;
+const EXP_LUT_SIZE = 1024;
+const expLut = new Float32Array(EXP_LUT_SIZE + 1);
+const expLutStep = EXP_LUT_MAX / EXP_LUT_SIZE;
+const expLutInvStep = 1 / expLutStep;
+for (let i = 0; i <= EXP_LUT_SIZE; i++) {
+  expLut[i] = Math.exp(-i * expLutStep);
+}
+
+let fieldQuality = 1;
+
+function fastExpNeg(x) {
+  if (x <= 0) return 1;
+  if (x >= EXP_LUT_MAX) return 0;
+  const scaled = x * expLutInvStep;
+  const idx = scaled | 0;
+  const frac = scaled - idx;
+  const a = expLut[idx];
+  const b = expLut[idx + 1];
+  return a + (b - a) * frac;
+}
 
 function rebuildFieldBuffer() {
   const scale = Math.min(1.35, Math.max(0.78, Math.min(W, H) / 900));
-  FIELD_W = Math.max(120, Math.round(180 * scale));
-  FIELD_H = Math.max(120, Math.round(180 * scale));
+  const targetW = Math.max(FIELD_MIN_RES, Math.round(FIELD_BASE_RES * scale * fieldQuality));
+  const targetH = Math.max(FIELD_MIN_RES, Math.round(FIELD_BASE_RES * scale * fieldQuality));
+  if (targetW === FIELD_W && targetH === FIELD_H && fieldImage) return;
+  FIELD_W = targetW;
+  FIELD_H = targetH;
   fieldCanvas.width = FIELD_W;
   fieldCanvas.height = FIELD_H;
   fieldImage = fieldCtx.createImageData(FIELD_W, FIELD_H);
@@ -80,11 +111,18 @@ canvas.addEventListener('mousemove', e => {
   const r = canvas.getBoundingClientRect();
   mouseX = e.clientX - r.left;
   mouseY = e.clientY - r.top;
+  const prevTargetRX = targetRX;
+  const prevTargetRY = targetRY;
   targetRY = ((mouseX) / W - 0.5) * 2 * MAX_ROT;
   targetRX = -((mouseY) / H - 0.5) * 2 * MAX_ROT;
   mouseInside = true;
   updateHoverVertex();
-  fieldDirty = true;
+  if (
+    Math.abs(targetRX - prevTargetRX) > FIELD_ROT_DIRTY_THRESHOLD ||
+    Math.abs(targetRY - prevTargetRY) > FIELD_ROT_DIRTY_THRESHOLD
+  ) {
+    fieldDirty = true;
+  }
   requestRender();
 });
 
@@ -156,8 +194,10 @@ function drawEmissionField(pv, p, boundScale) {
       const sigmaPxScreen = lerp(95, 335, backness) * boundScale;
       const sigma = sigmaPxScreen * (FIELD_W / W);
       const amp = lerp(1.25, 0.68, backness);
+      const invTwoSigma2 = 1 / (2 * sigma * sigma);
+      const signedAmp = sign * amp;
 
-      return { sign, vx, vy, sigma, amp };
+      return { vx, vy, invTwoSigma2, signedAmp };
     });
 
     let idx = 0;
@@ -168,8 +208,8 @@ function drawEmissionField(pv, p, boundScale) {
         for (const n of nodes) {
           const dx = x - n.vx;
           const dy = y - n.vy;
-          const s2 = n.sigma * n.sigma;
-          f += n.sign * n.amp * Math.exp(-(dx * dx + dy * dy) / (2 * s2));
+          const dist2 = dx * dx + dy * dy;
+          f += n.signedAmp * fastExpNeg(dist2 * n.invTwoSigma2);
         }
 
         const tone = 128 + 118 * Math.tanh(f * 1.28);
@@ -525,10 +565,23 @@ function render() {
     }
   }
 
+  const rotDeltaX = Math.abs(curRX - prevRX);
+  const rotDeltaY = Math.abs(curRY - prevRY);
+  const flipDelta = Math.abs(flipProgress - prevFlip);
+  const motionDelta = Math.max(rotDeltaX, rotDeltaY, flipDelta);
+
+  if (fieldQuality === 1 && motionDelta > FIELD_MOTION_ENTER_THRESHOLD) {
+    fieldQuality = FIELD_LOW_QUALITY;
+    rebuildFieldBuffer();
+  } else if (fieldQuality !== 1 && motionDelta < FIELD_MOTION_EXIT_THRESHOLD) {
+    fieldQuality = 1;
+    rebuildFieldBuffer();
+  }
+
   if (
-    Math.abs(curRX - prevRX) > EPS ||
-    Math.abs(curRY - prevRY) > EPS ||
-    Math.abs(flipProgress - prevFlip) > EPS
+    rotDeltaX > FIELD_ROT_DIRTY_THRESHOLD ||
+    rotDeltaY > FIELD_ROT_DIRTY_THRESHOLD ||
+    flipDelta > FIELD_FLIP_DIRTY_THRESHOLD
   ) {
     fieldDirty = true;
   }
