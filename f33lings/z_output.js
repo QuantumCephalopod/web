@@ -505,6 +505,8 @@ function initSidecar() {
     return;
   }
   const listEl = document.getElementById('territory-list');
+  let activeTerritoryEl = null;
+  const territoryElementMap = new Map();
   
   // Group territories by domain
   const domainMap = {};
@@ -526,11 +528,18 @@ function initSidecar() {
       const div = document.createElement('div');
       div.className = 'territory-item';
       setPlainText(div, terr);
-      if (terr === currentTerritory) div.classList.add('active');
+      if (terr === currentTerritory) {
+        div.classList.add('active');
+        activeTerritoryEl = div;
+      }
+      territoryElementMap.set(terr, div);
       
       div.onclick = () => {
-        document.querySelectorAll('.territory-item').forEach(el => el.classList.remove('active'));
+        if (activeTerritoryEl && activeTerritoryEl !== div) {
+          activeTerritoryEl.classList.remove('active');
+        }
         div.classList.add('active');
+        activeTerritoryEl = div;
         loadTerritoryData(terr);
       };
       container.appendChild(div);
@@ -540,7 +549,12 @@ function initSidecar() {
   });
   
   const allTerrs = [...new Set(window.FOUNDATION_DATA.map(d => d.territory))];
-  loadTerritoryData(allTerrs.includes('freedom') ? 'freedom' : allTerrs[0]);
+  const initialTerritory = allTerrs.includes('freedom') ? 'freedom' : allTerrs[0];
+  if (!activeTerritoryEl) {
+    activeTerritoryEl = territoryElementMap.get(initialTerritory) || listEl.querySelector('.territory-item');
+    if (activeTerritoryEl) activeTerritoryEl.classList.add('active');
+  }
+  loadTerritoryData(initialTerritory);
 }
 
 resizeCanvas();
