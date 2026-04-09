@@ -13,13 +13,8 @@ const EPS = 0.0005;
 const VIEW_MARGIN = 30;
 const NAME_WEIGHT = 1.18;
 const NAME_SIZE_BOOST = 1.42;
-const NAME_PROX_RADIUS = 333;
-const NAME_GAP_BOOST = 9.5;
-const NAME_RADIAL_BOOST = 5.5;
 const RIPPLE_DURATION_MS  = 900;
 const RIPPLE_RING_COUNT   = 4;
-const SPIRAL_BAKE_SIZE = 1200;
-const SPIRAL_BAKE_MARGIN = 40;
 
 const DARK_TEXT = '#0f0f10';
 const LIGHT_TEXT = '#f5f2ea';
