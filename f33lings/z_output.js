@@ -484,7 +484,7 @@ function render() {
     rippleFadeOut
   );
 
-  if (needsAnotherFrame() || mouseInside || rippleActive) requestRender();
+  if (needsAnotherFrame() || rippleActive) requestRender();
 }
 
 function initSidecar() {
