@@ -267,13 +267,36 @@ function buildSpiralLayout(name, text) {
   };
 }
 
+let territoryDataIndex = null;
+
+function buildTerritoryDataIndex() {
+  if (!window.FOUNDATION_DATA) return null;
+
+  const index = new Map();
+  for (const item of window.FOUNDATION_DATA) {
+    let entry = index.get(item.territory);
+    if (!entry) {
+      entry = { items: [], lights: [], shadows: [] };
+      index.set(item.territory, entry);
+    }
+    entry.items.push(item);
+    if (item.charge === 'light') entry.lights.push(item);
+    if (item.charge === 'shadow') entry.shadows.push(item);
+  }
+  return index;
+}
+
 function loadTerritoryData(territory) {
   if (!window.FOUNDATION_DATA) return;
-  const items = window.FOUNDATION_DATA.filter(d => d.territory === territory);
-  if (items.length !== 4) return;
-  
-  const lights = items.filter(d => d.charge === 'light');
-  const shadows = items.filter(d => d.charge === 'shadow');
+  if (!territoryDataIndex) territoryDataIndex = buildTerritoryDataIndex();
+  if (!territoryDataIndex) return;
+
+  const entry = territoryDataIndex.get(territory);
+  if (!entry || entry.items.length !== 4) return;
+
+  const items = entry.items;
+  const lights = entry.lights;
+  const shadows = entry.shadows;
   
   currentTerritory = territory;
   currentDomain = items[0].domain;
