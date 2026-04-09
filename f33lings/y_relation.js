@@ -336,11 +336,12 @@ function loadTerritoryData(territory) {
   requestRender();
 }
 
-function needsAnotherFrame() {
+function needsAnotherFrame(rawBoundScale) {
+  const nextBoundScale = rawBoundScale ?? computeBoundsScale(getProjVertsMap());
   return (
     Math.abs(flipTarget - flipProgress) > EPS ||
     Math.abs(targetRX - curRX) > EPS ||
     Math.abs(targetRY - curRY) > EPS ||
-    Math.abs(computeBoundsScale(getProjVertsMap()) - boundScaleState) > EPS
+    Math.abs(nextBoundScale - boundScaleState) > EPS
   );
 }
