@@ -5,6 +5,7 @@
     'w_structure.js',
     'x_state.js',
     'y_relation.js',
+    'webgl_spiral.js',
     'z_output.js',
   ];
 

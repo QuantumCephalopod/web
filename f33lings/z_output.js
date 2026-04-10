@@ -48,6 +48,11 @@ function requestRender() {
   if (!rafId) rafId = requestAnimationFrame(render);
 }
 
+
+const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
+  ? new SpiralWebGLRenderer()
+  : null;
+
 function updateHoverVertex() {
   if (!mouseInside) {
     if (hoverVertex !== null) {
@@ -100,6 +105,9 @@ function resizeCanvas() {
   cy = H / 2;
 
   rebuildFieldBuffer();
+  if (spiralWebGLRenderer && spiralWebGLRenderer.available) {
+    spiralWebGLRenderer.setSize(W, H, dpr);
+  }
   boundScaleState = 1;
   fieldDirty = true;
   requestRender();
@@ -642,8 +650,28 @@ function render() {
 
   const sorted = ORDER.slice().sort((a, b) => pv[a].z - pv[b].z);
 
-  for (const dir of sorted) {
-    renderSpiral(dir, p[dir], boundScale);
+  let renderedWebGLSpiral = false;
+  if (spiralWebGLRenderer && spiralWebGLRenderer.available) {
+    renderedWebGLSpiral = spiralWebGLRenderer.render({
+      aspects,
+      p,
+      boundScale,
+      now,
+      activeRippleVertex,
+      rippleFadeOut,
+      rippleStartTime,
+      rippleFadeStartTime,
+      rippleDurationMs: RIPPLE_DURATION_MS,
+    });
+    if (renderedWebGLSpiral) {
+      ctx.drawImage(spiralWebGLRenderer.canvas, 0, 0, W, H);
+    }
+  }
+
+  if (!renderedWebGLSpiral) {
+    for (const dir of sorted) {
+      renderSpiral(dir, p[dir], boundScale);
+    }
   }
 
   drawDots(sorted, p);
