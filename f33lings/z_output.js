@@ -361,92 +361,49 @@ function drawRipple(dir, p) {
 
 // ── Detail Panel ─────────────────────────────────────────────────────────────
 
-const DETAIL_FIELD_SELECTORS = {
-  address: '.detail-address',
-  symbol: '.detail-symbol',
-  name: '.detail-name',
-  essence: '.detail-essence',
-  create: '.detail-create',
-  copy: '.detail-copy',
-  control: '.detail-control'
+const DETAIL_PANEL = {
+  x: 24,
+  width: 260,
+  paddingX: 16,
+  paddingY: 18,
+  radius: 12,
 };
 
 const detailPanelState = {
-  panel: null,
-  fields: new Map(),
-  metrics: new Map(),
   layoutCache: new Map(),
   activeDir: null,
-  activeSignature: ''
+  activeSignature: '',
+  targetVisible: 0,
+  visible: 0,
+  content: null,
 };
 
 function invalidateDetailPanelCache() {
-  detailPanelState.metrics.clear();
   detailPanelState.layoutCache.clear();
 }
 
 window.addEventListener('resize', invalidateDetailPanelCache);
 
-function getDetailPanel() {
-  if (detailPanelState.panel && document.body.contains(detailPanelState.panel)) {
-    return detailPanelState.panel;
-  }
+function layoutPretextLines(raw, fieldId, width, font, lineHeight) {
+  const text = String(raw ?? '');
+  const cacheKey = `${fieldId}§${text}§${width}§${font}§${lineHeight}`;
+  const cached = detailPanelState.layoutCache.get(cacheKey);
+  if (cached) return cached;
 
-  const panel = document.getElementById('detail-panel');
-  if (!panel) return null;
-
-  detailPanelState.panel = panel;
-  detailPanelState.fields.clear();
-  for (const [fieldId, selector] of Object.entries(DETAIL_FIELD_SELECTORS)) {
-    detailPanelState.fields.set(fieldId, panel.querySelector(selector));
-  }
-  invalidateDetailPanelCache();
-  return panel;
-}
-
-function getFieldMetrics(fieldId, el) {
-  let metrics = detailPanelState.metrics.get(fieldId);
-  if (metrics) return metrics;
-
-  const computed = getComputedStyle(el);
-  const fontSize = parseFloat(computed.fontSize) || 16;
-  const width = Math.max(80, el.clientWidth || el.offsetWidth || 240);
-  const font = `${computed.fontSize} ${computed.fontFamily}`;
-  const lineHeight = parseFloat(computed.lineHeight) || fontSize * 1.35;
-
-  metrics = { width, font, lineHeight };
-  detailPanelState.metrics.set(fieldId, metrics);
-  return metrics;
-}
-
-// Prefer full pretext layout primitives for all UI copy blocks.
-function setPretextText(el, value, fieldId = '') {
-  if (!el) return;
-
-  const raw = String(value ?? '');
   const pre = window.pretext;
   const core = pre && pre.core;
-  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') {
-    el.style.whiteSpace = 'normal';
-    el.textContent = raw;
-    return;
+  let lines;
+  if (core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function') {
+    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+    const laidOut = core.layoutWithLines(prepared, width, lineHeight);
+    lines = laidOut.lines.map((line) => line.text);
+  } else {
+    lines = text.split(/\n/g);
   }
 
-  const metrics = getFieldMetrics(fieldId, el);
-  const cacheKey = `${fieldId}§${raw}§${metrics.width}§${metrics.font}`;
-  let text = detailPanelState.layoutCache.get(cacheKey);
-
-  if (text === undefined) {
-    const prepared = core.prepareWithSegments(raw, metrics.font, { whiteSpace: 'pre-wrap' });
-    const { lines } = core.layoutWithLines(prepared, metrics.width, metrics.lineHeight);
-    text = lines.map((line) => line.text).join('\n');
-    detailPanelState.layoutCache.set(cacheKey, text);
-  }
-
-  el.style.whiteSpace = 'pre-line';
-  el.textContent = text;
+  detailPanelState.layoutCache.set(cacheKey, lines);
+  return lines;
 }
-
 
 function setPlainText(el, value) {
   if (!el) return;
@@ -456,8 +413,7 @@ function setPlainText(el, value) {
 
 function showDetailPanel(dir) {
   const a = aspects[dir];
-  const panel = getDetailPanel();
-  if (!panel) return;
+  if (!a) return;
 
   const nextContent = {
     address: `${a.domain} › ${a.territory} › ${a.name}`,
@@ -466,8 +422,9 @@ function showDetailPanel(dir) {
     essence: a.autonomous_essence,
     create: a.create_aspect,
     copy: a.copy_aspect,
-    control: a.control_aspect
+    control: a.control_aspect,
   };
+
   const nextSignature = [
     nextContent.address,
     nextContent.symbol,
@@ -475,39 +432,141 @@ function showDetailPanel(dir) {
     nextContent.essence,
     nextContent.create,
     nextContent.copy,
-    nextContent.control
+    nextContent.control,
   ].join('§');
 
+  detailPanelState.targetVisible = 1;
+
   if (detailPanelState.activeDir === dir && detailPanelState.activeSignature === nextSignature) {
-    panel.classList.add('active');
     return;
   }
 
-  // Address line: domain → territory → aspect
-  setPretextText(detailPanelState.fields.get('address'), nextContent.address, 'address');
-
-  // Symbol + name header
-  setPretextText(detailPanelState.fields.get('symbol'), nextContent.symbol, 'symbol');
-  setPretextText(detailPanelState.fields.get('name'), nextContent.name, 'name');
-
-  // Essence line
-  setPretextText(detailPanelState.fields.get('essence'), nextContent.essence, 'essence');
-
-  // Three labeled sections
-  setPretextText(detailPanelState.fields.get('create'), nextContent.create, 'create');
-  setPretextText(detailPanelState.fields.get('copy'), nextContent.copy, 'copy');
-  setPretextText(detailPanelState.fields.get('control'), nextContent.control, 'control');
-
   detailPanelState.activeDir = dir;
   detailPanelState.activeSignature = nextSignature;
-
-  // Activate (CSS handles the opacity transition)
-  panel.classList.add('active');
+  detailPanelState.content = nextContent;
 }
 
 function hideDetailPanel() {
-  const panel = document.getElementById('detail-panel');
-  if (panel) panel.classList.remove('active');
+  detailPanelState.targetVisible = 0;
+}
+
+function drawDetailPanelOverlay() {
+  const speed = 0.14;
+  detailPanelState.visible += (detailPanelState.targetVisible - detailPanelState.visible) * speed;
+  if (Math.abs(detailPanelState.visible - detailPanelState.targetVisible) < 0.001) {
+    detailPanelState.visible = detailPanelState.targetVisible;
+  }
+
+  if (detailPanelState.visible <= 0.001 || !detailPanelState.content) return;
+
+  const alpha = detailPanelState.visible;
+  const width = DETAIL_PANEL.width;
+  const bodyWidth = width - DETAIL_PANEL.paddingX * 2;
+  const x = DETAIL_PANEL.x;
+
+  const fonts = {
+    address: '9px monospace',
+    symbol: '26px serif',
+    name: 'bold 15px monospace',
+    essence: 'italic 11px monospace',
+    label: '8px monospace',
+    section: '11px monospace',
+  };
+
+  const lineHeights = {
+    address: 14,
+    essence: 17,
+    section: 17,
+  };
+
+  const content = detailPanelState.content;
+  const addressLines = layoutPretextLines(content.address, 'address', bodyWidth, fonts.address, lineHeights.address);
+  const essenceLines = layoutPretextLines(content.essence, 'essence', bodyWidth, fonts.essence, lineHeights.essence);
+  const createLines = layoutPretextLines(content.create, 'create', bodyWidth, fonts.section, lineHeights.section);
+  const copyLines = layoutPretextLines(content.copy, 'copy', bodyWidth, fonts.section, lineHeights.section);
+  const controlLines = layoutPretextLines(content.control, 'control', bodyWidth, fonts.section, lineHeights.section);
+
+  const contentHeight =
+    12 +
+    addressLines.length * lineHeights.address +
+    10 +
+    30 +
+    essenceLines.length * lineHeights.essence +
+    10 +
+    (12 + createLines.length * lineHeights.section) +
+    (12 + copyLines.length * lineHeights.section) +
+    (12 + controlLines.length * lineHeights.section) +
+    12;
+
+  const panelHeight = Math.min(H - 40, Math.max(220, DETAIL_PANEL.paddingY * 2 + contentHeight));
+  const y = cy - panelHeight * 0.5;
+
+  const panelAlpha = alpha * 0.92;
+  ctx.save();
+  ctx.globalAlpha = panelAlpha;
+  ctx.fillStyle = 'rgba(248,246,240,0.92)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth = 1;
+
+  const r = DETAIL_PANEL.radius;
+  const right = x + width;
+  const bottom = y + panelHeight;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(right, y, right, bottom, r);
+  ctx.arcTo(right, bottom, x, bottom, r);
+  ctx.arcTo(x, bottom, x, y, r);
+  ctx.arcTo(x, y, right, y, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  let ty = y + DETAIL_PANEL.paddingY;
+  const tx = x + DETAIL_PANEL.paddingX;
+
+  const drawLines = (lines, font, fill, lh) => {
+    ctx.font = font;
+    ctx.fillStyle = fill;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = alpha;
+    for (const line of lines) {
+      ctx.fillText(line, tx, ty);
+      ty += lh;
+    }
+  };
+
+  drawLines(addressLines, fonts.address, 'rgba(136,136,136,1)', lineHeights.address);
+  ty += 8;
+
+  ctx.globalAlpha = alpha;
+  ctx.font = fonts.symbol;
+  ctx.fillStyle = 'rgba(17,17,17,1)';
+  ctx.fillText(content.symbol || '', tx, ty - 4);
+
+  ctx.font = fonts.name;
+  ctx.fillStyle = 'rgba(17,17,17,1)';
+  ctx.fillText(content.name || '', tx + 34, ty + 6);
+  ty += 30;
+
+  drawLines(essenceLines, fonts.essence, 'rgba(85,85,85,1)', lineHeights.essence);
+  ty += 8;
+
+  const section = (label, lines) => {
+    ctx.globalAlpha = alpha;
+    ctx.font = fonts.label;
+    ctx.fillStyle = 'rgba(168,168,168,1)';
+    ctx.fillText(label, tx, ty);
+    ty += 12;
+    drawLines(lines, fonts.section, 'rgba(34,34,34,1)', lineHeights.section);
+  };
+
+  section('CREATE', createLines);
+  section('COPY', copyLines);
+  section('CONTROL', controlLines);
+
+  ctx.globalAlpha = 1;
 }
 
 function drawEdges(pv) {
@@ -687,6 +746,8 @@ function render() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillText(`${currentDomain} · ${currentTerritory}`, cx, CAPTION_Y);
+
+  drawDetailPanelOverlay();
 
   if (Math.abs(flipTarget - flipProgress) <= EPS && flipTarget === 1) {
     flipProgress = 1;
