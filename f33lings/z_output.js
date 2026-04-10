@@ -77,12 +77,9 @@ function updateHoverVertex() {
     }
   }
 
-  const newHover = bestD2 < HIT_RADIUS * HIT_RADIUS ? nearest : null;
-  if (hoverVertex !== newHover) {
-    hoverVertex = newHover;
-    hoverStartTime = newHover ? performance.now() : 0;
-  }
-}
+const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
+  ? new SpiralWebGLRenderer()
+  : null;
 
 function resizeCanvas() {
   dpr = Math.min(window.devicePixelRatio || 1, 1.6);
@@ -124,7 +121,6 @@ canvas.addEventListener('mousemove', e => {
   targetRY = ((mouseX) / W - 0.5) * 2 * MAX_ROT;
   targetRX = -((mouseY) / H - 0.5) * 2 * MAX_ROT;
   mouseInside = true;
-  updateHoverVertex();
   if (
     Math.abs(targetRX - prevTargetRX) > FIELD_ROT_DIRTY_THRESHOLD ||
     Math.abs(targetRY - prevTargetRY) > FIELD_ROT_DIRTY_THRESHOLD
@@ -140,8 +136,6 @@ canvas.addEventListener('mouseleave', () => {
   mouseX = cx;
   mouseY = cy;
   mouseInside = false;
-  hoverVertex = null;
-  hoverStartTime = 0;
   fieldDirty = true;
   requestRender();
 });
@@ -167,7 +161,6 @@ canvas.addEventListener('click', e => {
 
   if (nearest && bestD2 < HIT_RADIUS * HIT_RADIUS) {
     lastClickedVertex = nearest;
-    hoverVertex = nearest;
 
     flipFrom = currentBaseOrientation();
 
@@ -295,18 +288,7 @@ function renderSpiral(dir, projVert, boundScale) {
   const textFill = charge === 'light' ? DARK_TEXT : LIGHT_TEXT;
   const bitmap = ensureSpiralTextBitmap(cache, textFill);
 
-  // Fade spiral out while ripple is active, fade back in when fading out
-  let alpha = 1.0;
-  if (activeRippleVertex === dir) {
-    const now = performance.now();
-    if (rippleFadeOut) {
-      const t = clamp((now - rippleFadeStartTime) / (RIPPLE_DURATION_MS * 0.6), 0, 1);
-      alpha = clamp(0.08 + easeInOut(t) * 0.92, 0, 1);
-    } else {
-      const t = clamp((now - rippleStartTime) / (RIPPLE_DURATION_MS * 0.7), 0, 1);
-      alpha = clamp(1.0 - easeInOut(t) * 0.92, 0.08, 1);
-    }
-  }
+  const alpha = 1.0;
 
   ctx.globalAlpha = alpha;
   ctx.setTransform(
@@ -647,33 +629,6 @@ function render() {
 
   const now = performance.now();
 
-  // ── Trigger portal on 1.3 s dwell ──────────────────────────────────────────
-  if (hoverVertex && !activeRippleVertex && hoverStartTime && now - hoverStartTime > 1300) {
-    if (Math.abs(flipTarget - flipProgress) < 0.001) {
-      activeRippleVertex  = hoverVertex;
-      rippleStartTime     = now;
-      rippleFadeOut       = false;
-      showDetailPanel(activeRippleVertex);
-    }
-  }
-
-  // ── Start fade-out when hover moves away / changes vertex ──────────────────
-  if (activeRippleVertex && !rippleFadeOut &&
-      (!hoverVertex || hoverVertex !== activeRippleVertex)) {
-    rippleFadeOut      = true;
-    rippleFadeStartTime = now;
-    hideDetailPanel();
-  }
-
-  // ── Clean up once spiral is fully restored ─────────────────────────────────
-  if (activeRippleVertex && rippleFadeOut) {
-    const fadeElapsed = now - rippleFadeStartTime;
-    if (fadeElapsed > RIPPLE_DURATION_MS * 0.65) {
-      activeRippleVertex = null;
-      rippleFadeOut      = false;
-    }
-  }
-
   const rotDeltaX = Math.abs(curRX - prevRX);
   const rotDeltaY = Math.abs(curRY - prevRY);
   const flipDelta = Math.abs(flipProgress - prevFlip);
@@ -735,10 +690,6 @@ function render() {
 
   drawDots(sorted, p);
 
-  for (const dir of sorted) {
-    // Draw ripple rings above spirals, below dots
-    if (dir === activeRippleVertex) drawRipple(dir, p);
-  }
 
   const CAPTION_Y = cy + ARM + 72;
   ctx.font = '11px monospace';
@@ -757,17 +708,14 @@ function render() {
     flipProgress = 0;
   }
 
-  if (mouseInside && Math.abs(flipTarget - flipProgress) < 0.001) {
-    updateHoverVertex();
-  }
 
-  // Keep ticking while ripple rings are still expanding or fading in
-  const rippleActive = activeRippleVertex && (
-    (!rippleFadeOut && now - rippleStartTime < RIPPLE_DURATION_MS * 1.6) ||
-    rippleFadeOut
-  );
+  if (needsAnotherFrame(rawBoundScale)) requestRender();
+}
 
-  if (needsAnotherFrame(rawBoundScale) || rippleActive) requestRender();
+function setPlainText(el, value) {
+  if (!el) return;
+  el.style.whiteSpace = 'normal';
+  el.textContent = String(value ?? '');
 }
 
 function initSidecar() {
