@@ -13,7 +13,6 @@ let targetRX = 0, targetRY = 0, curRX = 0, curRY = 0;
 let rafId = 0;
 let mouseInside = false;
 let mouseX = cx, mouseY = cy;
-let hoverVertex = null;
 let boundScaleState = 1;
 
 let flipProgress = 0;
@@ -21,11 +20,6 @@ let flipTarget = 0;
 let activePose = 'A';
 let lastClickedVertex = 'w';
 
-let hoverStartTime = 0;
-let activeRippleVertex = null;
-let rippleStartTime    = 0;
-let rippleFadeOut      = false;
-let rippleFadeStartTime = 0;
 
 // Will be hydrated mathematically by the relational engine layer
 let flipFrom, flipTo, flipMid;
