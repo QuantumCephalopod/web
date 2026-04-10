@@ -233,7 +233,12 @@ void main() {
         aspects,
         p,
         boundScale,
-        now
+        now,
+        activeRippleVertex,
+        rippleFadeOut,
+        rippleStartTime,
+        rippleFadeStartTime,
+        rippleDurationMs,
       } = state;
 
       this.buildAtlas(aspects);
@@ -249,7 +254,16 @@ void main() {
         const aspect = aspects[dir];
         if (!aspect || !aspect.cache) continue;
 
-        const alpha = 1;
+        let alpha = 1;
+        if (activeRippleVertex === dir) {
+          if (rippleFadeOut) {
+            const t = clamp((now - rippleFadeStartTime) / (rippleDurationMs * 0.6), 0, 1);
+            alpha = clamp(0.08 + easeInOut(t) * 0.92, 0, 1);
+          } else {
+            const t = clamp((now - rippleStartTime) / (rippleDurationMs * 0.7), 0, 1);
+            alpha = clamp(1.0 - easeInOut(t) * 0.92, 0.08, 1);
+          }
+        }
 
         const textIsLight = aspect.charge === 'light';
         const color = textIsLight ? [0.06, 0.06, 0.07] : [0.96, 0.95, 0.91];

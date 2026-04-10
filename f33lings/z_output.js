@@ -53,6 +53,34 @@ const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
   ? new SpiralWebGLRenderer()
   : null;
 
+function updateHoverVertex() {
+  if (!mouseInside) {
+    if (hoverVertex !== null) {
+      hoverVertex = null;
+      hoverStartTime = 0;
+    }
+    return;
+  }
+
+  const pv = getProjVerts();
+  let nearest = null;
+  let bestD2 = Infinity;
+
+  for (const dir of ORDER) {
+    const { x, y } = pv[dir].proj;
+    const dx = mouseX - x;
+    const dy = mouseY - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      nearest = dir;
+    }
+  }
+
+const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
+  ? new SpiralWebGLRenderer()
+  : null;
+
 function resizeCanvas() {
   dpr = Math.min(window.devicePixelRatio || 1, 1.6);
 
@@ -277,6 +305,252 @@ function renderSpiral(dir, projVert, boundScale) {
   ctx.globalAlpha = 1.0;
 }
 
+// ── Portal Ripple ────────────────────────────────────────────────────────────
+
+function drawRipple(dir, p) {
+  if (!activeRippleVertex || rippleFadeOut) return;
+  const { charge, cache } = aspects[dir];
+  const { x, y, scale } = p[dir];
+  const outerR  = cache.outerR * scale * boundScaleState;
+  const innerR  = DOT_R * scale * 0.5;
+  // Rings expand outward a bit beyond the spiral edge for a nice portal feel
+  const maxR    = outerR * 1.12;
+
+  const now     = performance.now();
+  const elapsed = now - rippleStartTime;
+
+  // RGB components of the ring color match the spiral disc color
+  const rgb = charge === 'light' ? '15,15,16' : '245,242,234';
+
+  for (let k = 0; k < RIPPLE_RING_COUNT; k++) {
+    const delay      = (k / RIPPLE_RING_COUNT) * RIPPLE_DURATION_MS;
+    const ringElapsed = elapsed - delay;
+    if (ringElapsed < 0 || ringElapsed > RIPPLE_DURATION_MS) continue;
+
+    const phase = ringElapsed / RIPPLE_DURATION_MS;
+    const r     = lerp(innerR, maxR, phase);
+    // Sine envelope: alpha peaks at mid-expansion
+    const ringAlpha = Math.sin(phase * Math.PI) * 0.55;
+    const lw        = lerp(3.5, 0.4, phase) * scale;
+
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${rgb},${ringAlpha})`;
+    ctx.lineWidth   = lw;
+    ctx.stroke();
+  }
+}
+
+// ── Detail Panel ─────────────────────────────────────────────────────────────
+
+const DETAIL_PANEL = {
+  x: 24,
+  width: 260,
+  paddingX: 16,
+  paddingY: 18,
+  radius: 12,
+};
+
+const detailPanelState = {
+  layoutCache: new Map(),
+  activeDir: null,
+  activeSignature: '',
+  targetVisible: 0,
+  visible: 0,
+  content: null,
+};
+
+function invalidateDetailPanelCache() {
+  detailPanelState.layoutCache.clear();
+}
+
+window.addEventListener('resize', invalidateDetailPanelCache);
+
+function layoutPretextLines(raw, fieldId, width, font, lineHeight) {
+  const text = String(raw ?? '');
+  const cacheKey = `${fieldId}§${text}§${width}§${font}§${lineHeight}`;
+  const cached = detailPanelState.layoutCache.get(cacheKey);
+  if (cached) return cached;
+
+  const pre = window.pretext;
+  const core = pre && pre.core;
+  let lines;
+  if (core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function') {
+    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+    const laidOut = core.layoutWithLines(prepared, width, lineHeight);
+    lines = laidOut.lines.map((line) => line.text);
+  } else {
+    lines = text.split(/\n/g);
+  }
+
+  detailPanelState.layoutCache.set(cacheKey, lines);
+  return lines;
+}
+
+function setPlainText(el, value) {
+  if (!el) return;
+  el.style.whiteSpace = 'normal';
+  el.textContent = String(value ?? '');
+}
+
+function showDetailPanel(dir) {
+  const a = aspects[dir];
+  if (!a) return;
+
+  const nextContent = {
+    address: `${a.domain} › ${a.territory} › ${a.name}`,
+    symbol: a.symbol,
+    name: a.name,
+    essence: a.autonomous_essence,
+    create: a.create_aspect,
+    copy: a.copy_aspect,
+    control: a.control_aspect,
+  };
+
+  const nextSignature = [
+    nextContent.address,
+    nextContent.symbol,
+    nextContent.name,
+    nextContent.essence,
+    nextContent.create,
+    nextContent.copy,
+    nextContent.control,
+  ].join('§');
+
+  detailPanelState.targetVisible = 1;
+
+  if (detailPanelState.activeDir === dir && detailPanelState.activeSignature === nextSignature) {
+    return;
+  }
+
+  detailPanelState.activeDir = dir;
+  detailPanelState.activeSignature = nextSignature;
+  detailPanelState.content = nextContent;
+}
+
+function hideDetailPanel() {
+  detailPanelState.targetVisible = 0;
+}
+
+function drawDetailPanelOverlay() {
+  const speed = 0.14;
+  detailPanelState.visible += (detailPanelState.targetVisible - detailPanelState.visible) * speed;
+  if (Math.abs(detailPanelState.visible - detailPanelState.targetVisible) < 0.001) {
+    detailPanelState.visible = detailPanelState.targetVisible;
+  }
+
+  if (detailPanelState.visible <= 0.001 || !detailPanelState.content) return;
+
+  const alpha = detailPanelState.visible;
+  const width = DETAIL_PANEL.width;
+  const bodyWidth = width - DETAIL_PANEL.paddingX * 2;
+  const x = DETAIL_PANEL.x;
+
+  const fonts = {
+    address: '9px monospace',
+    symbol: '26px serif',
+    name: 'bold 15px monospace',
+    essence: 'italic 11px monospace',
+    label: '8px monospace',
+    section: '11px monospace',
+  };
+
+  const lineHeights = {
+    address: 14,
+    essence: 17,
+    section: 17,
+  };
+
+  const content = detailPanelState.content;
+  const addressLines = layoutPretextLines(content.address, 'address', bodyWidth, fonts.address, lineHeights.address);
+  const essenceLines = layoutPretextLines(content.essence, 'essence', bodyWidth, fonts.essence, lineHeights.essence);
+  const createLines = layoutPretextLines(content.create, 'create', bodyWidth, fonts.section, lineHeights.section);
+  const copyLines = layoutPretextLines(content.copy, 'copy', bodyWidth, fonts.section, lineHeights.section);
+  const controlLines = layoutPretextLines(content.control, 'control', bodyWidth, fonts.section, lineHeights.section);
+
+  const contentHeight =
+    12 +
+    addressLines.length * lineHeights.address +
+    10 +
+    30 +
+    essenceLines.length * lineHeights.essence +
+    10 +
+    (12 + createLines.length * lineHeights.section) +
+    (12 + copyLines.length * lineHeights.section) +
+    (12 + controlLines.length * lineHeights.section) +
+    12;
+
+  const panelHeight = Math.min(H - 40, Math.max(220, DETAIL_PANEL.paddingY * 2 + contentHeight));
+  const y = cy - panelHeight * 0.5;
+
+  const panelAlpha = alpha * 0.92;
+  ctx.save();
+  ctx.globalAlpha = panelAlpha;
+  ctx.fillStyle = 'rgba(248,246,240,0.92)';
+  ctx.strokeStyle = 'rgba(0,0,0,0.09)';
+  ctx.lineWidth = 1;
+
+  const r = DETAIL_PANEL.radius;
+  const right = x + width;
+  const bottom = y + panelHeight;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(right, y, right, bottom, r);
+  ctx.arcTo(right, bottom, x, bottom, r);
+  ctx.arcTo(x, bottom, x, y, r);
+  ctx.arcTo(x, y, right, y, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  let ty = y + DETAIL_PANEL.paddingY;
+  const tx = x + DETAIL_PANEL.paddingX;
+
+  const drawLines = (lines, font, fill, lh) => {
+    ctx.font = font;
+    ctx.fillStyle = fill;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.globalAlpha = alpha;
+    for (const line of lines) {
+      ctx.fillText(line, tx, ty);
+      ty += lh;
+    }
+  };
+
+  drawLines(addressLines, fonts.address, 'rgba(136,136,136,1)', lineHeights.address);
+  ty += 8;
+
+  ctx.globalAlpha = alpha;
+  ctx.font = fonts.symbol;
+  ctx.fillStyle = 'rgba(17,17,17,1)';
+  ctx.fillText(content.symbol || '', tx, ty - 4);
+
+  ctx.font = fonts.name;
+  ctx.fillStyle = 'rgba(17,17,17,1)';
+  ctx.fillText(content.name || '', tx + 34, ty + 6);
+  ty += 30;
+
+  drawLines(essenceLines, fonts.essence, 'rgba(85,85,85,1)', lineHeights.essence);
+  ty += 8;
+
+  const section = (label, lines) => {
+    ctx.globalAlpha = alpha;
+    ctx.font = fonts.label;
+    ctx.fillStyle = 'rgba(168,168,168,1)';
+    ctx.fillText(label, tx, ty);
+    ty += 12;
+    drawLines(lines, fonts.section, 'rgba(34,34,34,1)', lineHeights.section);
+  };
+
+  section('CREATE', createLines);
+  section('COPY', copyLines);
+  section('CONTROL', controlLines);
+
+  ctx.globalAlpha = 1;
+}
+
 function drawEdges(pv) {
   const p = {};
   for (const dir of ORDER) p[dir] = pv[dir].proj;
@@ -397,6 +671,11 @@ function render() {
       p,
       boundScale,
       now,
+      activeRippleVertex,
+      rippleFadeOut,
+      rippleStartTime,
+      rippleFadeStartTime,
+      rippleDurationMs: RIPPLE_DURATION_MS,
     });
     if (renderedWebGLSpiral) {
       ctx.drawImage(spiralWebGLRenderer.canvas, 0, 0, W, H);
@@ -419,6 +698,7 @@ function render() {
   ctx.textBaseline = 'top';
   ctx.fillText(`${currentDomain} · ${currentTerritory}`, cx, CAPTION_Y);
 
+  drawDetailPanelOverlay();
 
   if (Math.abs(flipTarget - flipProgress) <= EPS && flipTarget === 1) {
     flipProgress = 1;
