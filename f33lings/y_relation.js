@@ -353,3 +353,96 @@ function needsAnotherFrame(rawBoundScale) {
     Math.abs(nextBoundScale - boundScaleState) > EPS
   );
 }
+
+// Path-tensor runtime law logic (y = relational/runtime transformation rules)
+function ptResetRuntimeState() {
+  ptRuntimeState.shadowStore = Object.create(null);
+  ptRuntimeState.materializedNamedBodies = Object.create(null);
+  ptRuntimeState.contexts = [];
+}
+
+function ptIsTopLevelImageLiteral(node) {
+  return !!node && node.type === PT_NODE_IMAGE_LITERAL && node.scope === PT_SCOPE_TOP;
+}
+
+function ptFail(message, details = {}) {
+  const error = new Error(message);
+  error.name = 'PathTensorRuntimeError';
+  error.details = details;
+  throw error;
+}
+
+function ptDecodeImageLiteral(node, handlers = {}) {
+  if (typeof handlers.decodeImage === 'function') {
+    try {
+      return handlers.decodeImage(node.path, node);
+    } catch (cause) {
+      ptFail(`Failed to decode image literal at path ${node.path}`, {
+        code: 'IMAGE_DECODE_FAILED',
+        path: node.path,
+        cause,
+      });
+    }
+  }
+
+  if (typeof handlers.importPath === 'function') {
+    try {
+      return handlers.importPath(node.path, node);
+    } catch (cause) {
+      ptFail(`Failed to import material body at path ${node.path}`, {
+        code: 'IMPORT_FAILED',
+        path: node.path,
+        cause,
+      });
+    }
+  }
+
+  ptFail('No image decoder/importer configured.', {
+    code: 'MISSING_IMPORT_HANDLER',
+  });
+}
+
+function ptResolveTopLevelPathTensorLiterals(topLevelNodes, handlers = {}) {
+  for (const node of topLevelNodes) {
+    if (!ptIsTopLevelImageLiteral(node)) continue;
+
+    const importedBody = ptDecodeImageLiteral(node, handlers);
+    if (!node.suffix) {
+      ptFail(`Invalid top-level bare path literal: ${node.path}`, {
+        code: 'INVALID_BARE_PATH_LITERAL',
+        path: node.path,
+      });
+    }
+
+    const name = node.suffix;
+    if (!ptRuntimeState.shadowStore[name]) {
+      ptRuntimeState.shadowStore[name] = Object.create(null);
+    }
+    ptRuntimeState.shadowStore[name].material = importedBody;
+    ptRuntimeState.materializedNamedBodies[name] = importedBody;
+  }
+}
+
+function ptActivateContexts(namedContexts, unnamedContexts) {
+  const activated = [];
+
+  for (const ctx of namedContexts) {
+    const localSeed = ctx.localMaterialSeed || null;
+    const globalSeed = ctx.name ? ptRuntimeState.materializedNamedBodies[ctx.name] : null;
+    const materialSeed = localSeed || globalSeed || null;
+    activated.push({
+      ...ctx,
+      materialSeed,
+      linkOnly: !materialSeed,
+    });
+  }
+
+  for (const ctx of unnamedContexts) {
+    activated.push({
+      ...ctx,
+      linkOnly: false,
+    });
+  }
+
+  ptRuntimeState.contexts = activated;
+}

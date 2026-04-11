@@ -784,6 +784,31 @@ function initSidecar() {
   loadTerritoryData(initialTerritory);
 }
 
+// Path-tensor runtime API (z = outward boundary / execution surface)
+window.pathTensorRuntime = {
+  executeProgram(program = {}, handlers = {}) {
+    const topLevelNodes = Array.isArray(program.topLevelNodes) ? program.topLevelNodes : [];
+    const namedContexts = Array.isArray(program.namedContexts) ? program.namedContexts : [];
+    const unnamedContexts = Array.isArray(program.unnamedContexts) ? program.unnamedContexts : [];
+
+    // Canonical order:
+    // parse
+    // -> resolve top-level path-tensor literals
+    // -> materialize imported bodies / named bodies
+    // -> activate named and unnamed contexts
+    // -> run normal tick loop
+    ptResetRuntimeState();
+    ptResolveTopLevelPathTensorLiterals(topLevelNodes, handlers);
+    ptActivateContexts(namedContexts, unnamedContexts);
+
+    return {
+      shadowStore: ptRuntimeState.shadowStore,
+      materializedNamedBodies: ptRuntimeState.materializedNamedBodies,
+      contexts: ptRuntimeState.contexts,
+    };
+  },
+};
+
 resizeCanvas();
 initSidecar();
 requestRender();
