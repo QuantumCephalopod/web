@@ -48,38 +48,13 @@ function requestRender() {
   if (!rafId) rafId = requestAnimationFrame(render);
 }
 
-
 const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
   ? new SpiralWebGLRenderer()
   : null;
-
-function updateHoverVertex() {
-  if (!mouseInside) {
-    if (hoverVertex !== null) {
-      hoverVertex = null;
-      hoverStartTime = 0;
-    }
-    return;
-  }
-
-  const pv = getProjVerts();
-  let nearest = null;
-  let bestD2 = Infinity;
-
-  for (const dir of ORDER) {
-    const { x, y } = pv[dir].proj;
-    const dx = mouseX - x;
-    const dy = mouseY - y;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < bestD2) {
-      bestD2 = d2;
-      nearest = dir;
-    }
-  }
-
-const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
-  ? new SpiralWebGLRenderer()
-  : null;
+let activeRippleVertex = null;
+let rippleStartTime = 0;
+let rippleFadeOut = false;
+let rippleFadeStartTime = 0;
 
 function resizeCanvas() {
   dpr = Math.min(window.devicePixelRatio || 1, 1.6);
