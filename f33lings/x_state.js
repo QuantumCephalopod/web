@@ -24,3 +24,10 @@ let lastClickedVertex = 'w';
 // Will be hydrated mathematically by the relational engine layer
 let flipFrom, flipTo, flipMid;
 let qA, qB, SWAP_AXIS;
+
+// Path-tensor runtime law state (x = mutable process state)
+const ptRuntimeState = {
+  shadowStore: Object.create(null),
+  materializedNamedBodies: Object.create(null),
+  contexts: [],
+};

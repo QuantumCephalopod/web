@@ -30,3 +30,7 @@ const verts3D = {
 
 const ORDER = ['w', 'x', 'y', 'z'];
 const DIAG_PAIRS = [['w', 'x'], ['w', 'z'], ['y', 'x'], ['y', 'z']];
+
+// Path-tensor runtime law constants (w = structural definitions)
+const PT_NODE_IMAGE_LITERAL = 'ImageLiteral';
+const PT_SCOPE_TOP = 'top';
