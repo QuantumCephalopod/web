@@ -168,6 +168,10 @@ canvas.addEventListener('click', e => {
 
   if (nearest && bestD2 < HIT_RADIUS * HIT_RADIUS) {
     lastClickedVertex = nearest;
+    activeRippleVertex = nearest;
+    rippleStartTime = performance.now();
+    rippleFadeOut = false;
+    rippleFadeStartTime = 0;
 
     flipFrom = currentBaseOrientation();
 

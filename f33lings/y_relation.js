@@ -346,7 +346,13 @@ function loadTerritoryData(territory) {
 
 function needsAnotherFrame(rawBoundScale) {
   const nextBoundScale = rawBoundScale ?? computeBoundsScale(getProjVertsMap());
+  const hasActiveRipple =
+    typeof activeRippleVertex !== 'undefined' && activeRippleVertex !== null;
+  const hasRippleFadeOut =
+    typeof rippleFadeOut !== 'undefined' && rippleFadeOut;
   return (
+    hasActiveRipple ||
+    hasRippleFadeOut ||
     Math.abs(flipTarget - flipProgress) > EPS ||
     Math.abs(targetRX - curRX) > EPS ||
     Math.abs(targetRY - curRY) > EPS ||
