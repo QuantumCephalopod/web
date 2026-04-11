@@ -147,34 +147,6 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas);
 
-canvas.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  mouseX = e.clientX - r.left;
-  mouseY = e.clientY - r.top;
-  const prevTargetRX = targetRX;
-  const prevTargetRY = targetRY;
-  targetRY = ((mouseX) / W - 0.5) * 2 * MAX_ROT;
-  targetRX = -((mouseY) / H - 0.5) * 2 * MAX_ROT;
-  mouseInside = true;
-  if (
-    Math.abs(targetRX - prevTargetRX) > FIELD_ROT_DIRTY_THRESHOLD ||
-    Math.abs(targetRY - prevTargetRY) > FIELD_ROT_DIRTY_THRESHOLD
-  ) {
-    fieldDirty = true;
-  }
-  requestRender();
-});
-
-canvas.addEventListener('mouseleave', () => {
-  targetRX = 0;
-  targetRY = 0;
-  mouseX = cx;
-  mouseY = cy;
-  mouseInside = false;
-  fieldDirty = true;
-  requestRender();
-});
-
 canvas.addEventListener('click', e => {
   const r = canvas.getBoundingClientRect();
   const mx = e.clientX - r.left;
