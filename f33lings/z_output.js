@@ -48,38 +48,13 @@ function requestRender() {
   if (!rafId) rafId = requestAnimationFrame(render);
 }
 
-
 const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
   ? new SpiralWebGLRenderer()
   : null;
-
-function updateHoverVertex() {
-  if (!mouseInside) {
-    if (hoverVertex !== null) {
-      hoverVertex = null;
-      hoverStartTime = 0;
-    }
-    return;
-  }
-
-  const pv = getProjVerts();
-  let nearest = null;
-  let bestD2 = Infinity;
-
-  for (const dir of ORDER) {
-    const { x, y } = pv[dir].proj;
-    const dx = mouseX - x;
-    const dy = mouseY - y;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < bestD2) {
-      bestD2 = d2;
-      nearest = dir;
-    }
-  }
-
-const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
-  ? new SpiralWebGLRenderer()
-  : null;
+let activeRippleVertex = null;
+let rippleStartTime = 0;
+let rippleFadeOut = false;
+let rippleFadeStartTime = 0;
 
 function resizeCanvas() {
   dpr = Math.min(window.devicePixelRatio || 1, 1.6);
@@ -111,34 +86,6 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
-
-canvas.addEventListener('mousemove', e => {
-  const r = canvas.getBoundingClientRect();
-  mouseX = e.clientX - r.left;
-  mouseY = e.clientY - r.top;
-  const prevTargetRX = targetRX;
-  const prevTargetRY = targetRY;
-  targetRY = ((mouseX) / W - 0.5) * 2 * MAX_ROT;
-  targetRX = -((mouseY) / H - 0.5) * 2 * MAX_ROT;
-  mouseInside = true;
-  if (
-    Math.abs(targetRX - prevTargetRX) > FIELD_ROT_DIRTY_THRESHOLD ||
-    Math.abs(targetRY - prevTargetRY) > FIELD_ROT_DIRTY_THRESHOLD
-  ) {
-    fieldDirty = true;
-  }
-  requestRender();
-});
-
-canvas.addEventListener('mouseleave', () => {
-  targetRX = 0;
-  targetRY = 0;
-  mouseX = cx;
-  mouseY = cy;
-  mouseInside = false;
-  fieldDirty = true;
-  requestRender();
-});
 
 canvas.addEventListener('click', e => {
   const r = canvas.getBoundingClientRect();
