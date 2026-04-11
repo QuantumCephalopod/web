@@ -51,10 +51,70 @@ function requestRender() {
 const spiralWebGLRenderer = typeof SpiralWebGLRenderer === 'function'
   ? new SpiralWebGLRenderer()
   : null;
+let hoverVertex = null;
+let hoverStartTime = 0;
 let activeRippleVertex = null;
 let rippleStartTime = 0;
 let rippleFadeOut = false;
 let rippleFadeStartTime = 0;
+
+function updateHoverVertex() {
+  const now = performance.now();
+
+  if (!mouseInside) {
+    if (hoverVertex !== null) {
+      hoverVertex = null;
+      hoverStartTime = 0;
+      if (activeRippleVertex && !rippleFadeOut) {
+        rippleFadeOut = true;
+        rippleFadeStartTime = now;
+      }
+    }
+    if (rippleFadeOut && now - rippleFadeStartTime >= RIPPLE_DURATION_MS * 0.6) {
+      rippleFadeOut = false;
+      activeRippleVertex = null;
+    }
+    return;
+  }
+
+  const pv = getProjVerts();
+  let nearest = null;
+  let bestD2 = Infinity;
+
+  for (const dir of ORDER) {
+    const { x, y } = pv[dir].proj;
+    const dx = mouseX - x;
+    const dy = mouseY - y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < bestD2) {
+      bestD2 = d2;
+      nearest = dir;
+    }
+  }
+
+  if (nearest && bestD2 < HIT_RADIUS * HIT_RADIUS) {
+    if (hoverVertex !== nearest) {
+      hoverVertex = nearest;
+      hoverStartTime = now;
+      activeRippleVertex = nearest;
+      rippleStartTime = now;
+      rippleFadeOut = false;
+      rippleFadeStartTime = 0;
+    }
+  } else if (hoverVertex !== null) {
+    hoverVertex = null;
+    hoverStartTime = 0;
+    if (activeRippleVertex && !rippleFadeOut) {
+      rippleFadeOut = true;
+      rippleFadeStartTime = now;
+    }
+  }
+
+  if (rippleFadeOut && now - rippleFadeStartTime >= RIPPLE_DURATION_MS * 0.6) {
+    rippleFadeOut = false;
+    activeRippleVertex = null;
+  }
+}
 
 function resizeCanvas() {
   dpr = Math.min(window.devicePixelRatio || 1, 1.6);
@@ -624,6 +684,7 @@ function render() {
   ) {
     fieldDirty = true;
   }
+  updateHoverVertex();
 
   const pv = getProjVerts();
   const p = {};
