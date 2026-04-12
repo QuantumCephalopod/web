@@ -1,6 +1,5 @@
 (function initPretextRuntime(global) {
-  const PRETEXT_ESM_URL = 'https://cdn.jsdelivr.net/npm/@chenglou/pretext/+esm';
-  const PRETEXT_RICH_INLINE_ESM_URL = 'https://cdn.jsdelivr.net/npm/@chenglou/pretext/rich-inline/+esm';
+  const PRETEXT_LOCAL_MODULE_PATH = './pretext-local.mjs';
 
   function px(value, fallback) {
     const n = parseFloat(value);
@@ -17,11 +16,8 @@
     return String(value ?? '').replace(/\s+/g, ' ').trim();
   }
 
-  Promise.all([
-    import(PRETEXT_ESM_URL),
-    import(PRETEXT_RICH_INLINE_ESM_URL),
-  ])
-    .then(([corePkg, richInlinePkg]) => {
+  import(PRETEXT_LOCAL_MODULE_PATH)
+    .then((pretextModule) => {
       const {
         prepare,
         prepareWithSegments,
@@ -30,7 +26,7 @@
         walkLineRanges,
         layoutNextLineRange,
         materializeLineRange,
-      } = corePkg;
+      } = pretextModule;
 
       function ensurePreparedForLines(text, font, options = {}) {
         return prepareWithSegments(String(text ?? ''), font, options);
@@ -46,7 +42,7 @@
         materializeLineRange,
       };
 
-      const richInline = richInlinePkg;
+      const richInline = pretextModule.richInline || {};
 
       global.pretext = {
         core,
