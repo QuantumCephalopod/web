@@ -1,6 +1,12 @@
 (function initPretextRuntime(global) {
-  const PRETEXT_ESM_URL = 'https://cdn.jsdelivr.net/npm/@chenglou/pretext/+esm';
-  const PRETEXT_RICH_INLINE_ESM_URL = 'https://cdn.jsdelivr.net/npm/@chenglou/pretext/rich-inline/+esm';
+  const PRETEXT_ESM_URL = '/vendor/pretext-upstream/dist/layout.js';
+  const PRETEXT_RICH_INLINE_ESM_URL = '/vendor/pretext-upstream/dist/rich-inline.js';
+  global.pretextRuntimeDiagnostics = {
+    state: 'loading',
+    coreUrl: PRETEXT_ESM_URL,
+    richInlineUrl: PRETEXT_RICH_INLINE_ESM_URL,
+    lastError: null,
+  };
 
   function px(value, fallback) {
     const n = parseFloat(value);
@@ -78,9 +84,17 @@
         },
       };
 
-      global.dispatchEvent(new Event('pretext:ready'));
+      global.pretextRuntimeDiagnostics.state = 'ready';
+      global.dispatchEvent(new CustomEvent('pretext:ready', { detail: { ...global.pretextRuntimeDiagnostics } }));
     })
     .catch((error) => {
-      console.error('Failed to load @chenglou/pretext runtime', error);
+      global.pretext = global.pretext || {
+        core: null,
+        richInline: null,
+      };
+      global.pretextRuntimeDiagnostics.state = 'failed';
+      global.pretextRuntimeDiagnostics.lastError = error && error.message ? error.message : String(error);
+      console.error('Failed to load local @chenglou/pretext runtime', error);
+      global.dispatchEvent(new CustomEvent('pretext:failed', { detail: { ...global.pretextRuntimeDiagnostics, error } }));
     });
 })(window);

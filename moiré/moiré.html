@@ -39,6 +39,33 @@
     cursor: pointer; font-family: monospace; font-size: 12px;
   }
   button:hover { background: #1d2234; }
+  .pretext-status {
+    margin-bottom: 10px;
+    border: 1px solid #542222;
+    background: #2a1111;
+    color: #ffbaba;
+    padding: 10px;
+    font-size: 12px;
+    display: none;
+  }
+  .pretext-status[data-state="waiting"] {
+    display: block;
+    border-color: #3a3f54;
+    background: #131724;
+    color: #bcc7f8;
+  }
+  .pretext-status[data-state="failed"] {
+    display: block;
+  }
+  .diagnostics {
+    margin: 0 0 10px;
+    border: 1px solid #2a2f42;
+    background: #0e1220;
+    color: #aeb8dd;
+    padding: 8px;
+    font-size: 11px;
+    white-space: pre-wrap;
+  }
   canvas { display: block; border: 1px solid #23283b; margin-top: 12px; max-width: 100%; }
 </style>
 </head>
@@ -64,6 +91,8 @@
   <button id="recordGif">record GIF</button>
 </div>
 
+<div id="pretextStatus" class="pretext-status" data-state="waiting">Initializing local Pretext runtime…</div>
+<pre id="diagnostics" class="diagnostics"></pre>
 <textarea id="text">A woman who repairs instruments lives in a city where all the buildings are tuned to slightly different frequencies. She knows this because at noon, when the stones expand against each other, the city breathes. You can hear it if you press your ear to the wall. She calls this *the consensus*. It happens whether or not anyone listens.
 
 Her workshop is small. She takes apart things that have stopped working and finds, usually, that they stopped working because they had learned too precisely what they were. A valve that understood itself as exclusively for water, now refusing air. A hinge that had decided it was ornamental, stiffening against use.
@@ -174,6 +203,62 @@ function presentFrameWebGL() {
 
 let imgEl = null;
 let lumCache = null, lumW = 0, lumH = 0;
+let pretextFailed = false;
+const diag = {
+  pretextState: 'loading',
+  pretextError: '',
+  readyEventSeen: false,
+  failedEventSeen: false,
+  renderCount: 0,
+  lastRender: 'not-started',
+  lineCount: 0,
+  totalChars: 0,
+  glyphsDrawn: 0,
+};
+
+function updateDiagnostics(extra = {}) {
+  Object.assign(diag, extra);
+  const runtimeDiag = window.pretextRuntimeDiagnostics || {};
+  const lines = [
+    `pretext.state: ${diag.pretextState}`,
+    `pretext.error: ${diag.pretextError || '(none)'}`,
+    `pretext.readyEventSeen: ${diag.readyEventSeen}`,
+    `pretext.failedEventSeen: ${diag.failedEventSeen}`,
+    `runtime.coreUrl: ${runtimeDiag.coreUrl || '(unknown)'}`,
+    `runtime.richInlineUrl: ${runtimeDiag.richInlineUrl || '(unknown)'}`,
+    `render.count: ${diag.renderCount}`,
+    `render.last: ${diag.lastRender}`,
+    `layout.lines: ${diag.lineCount}`,
+    `layout.totalChars: ${diag.totalChars}`,
+    `draw.glyphs: ${diag.glyphsDrawn}`,
+    `canvas.size: ${canvas.width}x${canvas.height}`,
+  ];
+  document.getElementById('diagnostics').textContent = lines.join('\n');
+}
+
+function setPretextFailureState(reason = 'unknown error') {
+  pretextFailed = true;
+  const status = document.getElementById('pretextStatus');
+  status.style.display = '';
+  status.dataset.state = 'failed';
+  status.textContent = `Pretext unavailable (pretext:failed). Rendering is disabled to keep Pretext as source of truth. ${reason}`;
+  updateDiagnostics({ pretextState: 'failed', pretextError: reason, failedEventSeen: true });
+}
+
+function clearPretextStatus() {
+  const status = document.getElementById('pretextStatus');
+  status.dataset.state = '';
+  status.style.display = 'none';
+  updateDiagnostics({ pretextState: 'ready', pretextError: '' });
+}
+
+function requirePretextCore() {
+  if (pretextFailed) return null;
+  const core = window.pretext && window.pretext.core;
+  const ready = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
+  if (ready) return core;
+  return null;
+}
 
 function setPretextText(el, value) {
   if (!el) return;
@@ -202,17 +287,17 @@ document.getElementById('img').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
   const img = new Image();
-  img.onload = () => { imgEl = img; lumCache = null; lineCache = null; render(0); };
+  img.onload = () => { imgEl = img; lumCache = null; lineCache = null; safeRender(0); };
   img.src = URL.createObjectURL(file);
 });
 
 ['fontSize','amplitude','smooth','thickness','invert','whitebg','speed','wave','pad'].forEach(id =>
-  document.getElementById(id).addEventListener('input', () => { if (!animRunning) render(0); })
+  document.getElementById(id).addEventListener('input', () => { if (!animRunning) safeRender(0); })
 );
 ['fontSize','smooth','invert','pad'].forEach(id =>
   document.getElementById(id).addEventListener('input', () => { lineCache = null; })
 );
-document.getElementById('render').addEventListener('click', () => { lineCache = null; render(0); });
+document.getElementById('render').addEventListener('click', () => { lineCache = null; safeRender(0); });
 document.getElementById('save').addEventListener('click', () => {
   const a = document.createElement('a');
   a.download = 'moiree.png';
@@ -227,14 +312,14 @@ document.getElementById('pulse').addEventListener('change', e => {
     const start = performance.now();
     const loop = now => {
       if (!document.getElementById('pulse').checked) { animRunning = false; return; }
-      render((now - start) / 1000);
+      safeRender((now - start) / 1000);
       rafId = requestAnimationFrame(loop);
     };
     rafId = requestAnimationFrame(loop);
   } else {
     animRunning = false;
     if (rafId) cancelAnimationFrame(rafId);
-    render(0);
+    safeRender(0);
   }
 });
 
@@ -268,30 +353,8 @@ function boxBlur(src, out, n, r) {
   for (let x = 0; x < n; x++) out[x] = buf[Math.min(x + r, n - 1)];
 }
 
-function fallbackLayoutLines(text, effectiveW) {
-  const paragraphs = String(text ?? '').split('\n');
-  const lines = [];
-  for (const paragraph of paragraphs) {
-    if (!paragraph) {
-      lines.push('');
-      continue;
-    }
-    let current = '';
-    for (const ch of paragraph) {
-      const trial = current + ch;
-      if (drawCtx.measureText(trial).width <= effectiveW || current.length === 0) {
-        current = trial;
-        continue;
-      }
-      lines.push(current);
-      current = ch;
-    }
-    lines.push(current);
-  }
-  return lines;
-}
-
 function render(time = 0) {
+  diag.renderCount += 1;
   const fontSize = +document.getElementById('fontSize').value;
   const press = +document.getElementById('amplitude').value / 100;
   const smoothR = +document.getElementById('smooth').value;
@@ -322,23 +385,21 @@ function render(time = 0) {
   drawCtx.textBaseline = 'middle';
   const effectiveW = Math.max(1, W - 2 * padX);
 
-  const core = window.pretext && window.pretext.core;
-  const hasPretext = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
+  const core = requirePretextCore();
+  if (!core) {
+    updateDiagnostics({ lastRender: 'skipped: pretext core unavailable' });
+    return;
+  }
   const fallbackLineHeight = Math.max(10, fontSize * 1.35);
   let lineHeight = fallbackLineHeight;
-  let textLines;
-
-  if (hasPretext) {
-    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
-    const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
-    lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : fallbackLineHeight;
-    const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
-    if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
-    textLines = lines.map((line) => [...line.text]);
-  } else {
-    textLines = fallbackLayoutLines(text, effectiveW).map((line) => [...line]);
-  }
+  const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+  const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
+  lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : fallbackLineHeight;
+  const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
+  if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
+  const textLines = lines.map((line) => [...line.text]);
   const totalLines = Math.max(1, textLines.length);
+  const totalChars = textLines.reduce((sum, line) => sum + line.length, 0);
   const effectiveLineH = H / totalLines;
 
   const cacheKey = `${W},${H},${fontSize},${smoothR},${invert ? 1 : 0},${totalLines},${padX}`;
@@ -374,6 +435,7 @@ function render(time = 0) {
   drawCtx.fillStyle = whitebg ? '#111' : '#e4e4e4';
 
   const dY = new Float32Array(W);
+  let glyphsDrawn = 0;
 
   for (let li = 0; li < totalLines; li++) {
     const { baseY, normDisplace, lumChars } = lineCache[li];
@@ -407,19 +469,53 @@ function render(time = 0) {
       const cos = Math.cos(angle), sin = Math.sin(angle);
       drawCtx.setTransform(cos, sin, -sin, cos, cx, cy);
       drawCtx.fillText(chars[ci], 0, 0);
+      glyphsDrawn += 1;
     }
   }
 
   drawCtx.setTransform(1, 0, 0, 1, 0, 0);
   drawCtx.font = font;
   presentFrameWebGL();
+  updateDiagnostics({
+    lastRender: 'ok',
+    lineCount: totalLines,
+    totalChars,
+    glyphsDrawn,
+  });
 }
 
-render(0);
+function safeRender(time = 0) {
+  try {
+    render(time);
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    setPretextFailureState(`render exception: ${message}`);
+    updateDiagnostics({ lastRender: `error: ${message}` });
+    console.error('moiré render failed', error);
+  }
+}
+
+safeRender(0);
 window.addEventListener('pretext:ready', () => {
+  clearPretextStatus();
+  pretextFailed = false;
+  updateDiagnostics({ readyEventSeen: true, pretextState: 'ready' });
   lineCache = null;
-  render(0);
+  safeRender(0);
   updateGifInfo();
+});
+window.addEventListener('pretext:failed', (event) => {
+  const reason = event && event.detail && event.detail.lastError ? event.detail.lastError : 'Runtime import failed.';
+  setPretextFailureState(reason);
+  lineCache = null;
+});
+window.addEventListener('error', (event) => {
+  const message = event && event.message ? event.message : 'window error';
+  updateDiagnostics({ lastRender: `window.error: ${message}` });
+});
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event && event.reason ? (event.reason.message || String(event.reason)) : 'unhandled rejection';
+  updateDiagnostics({ lastRender: `unhandledrejection: ${reason}` });
 });
 
 const GIF_FPS = 12;
@@ -440,6 +536,7 @@ function updateGifInfo() {
 document.getElementById('gifLoops').addEventListener('input', updateGifInfo);
 document.getElementById('speed').addEventListener('input', updateGifInfo);
 updateGifInfo();
+updateDiagnostics();
 
 let gifWorkerUrl = null;
 async function ensureWorkerUrl() {
@@ -471,7 +568,7 @@ document.getElementById('recordGif').addEventListener('click', async () => {
   btn.disabled = true;
 
   for (let i = 0; i < total; i++) {
-    render(i * dt);
+    safeRender(i * dt);
 
     const scale = Math.min(gifW / canvas.width, 1);
     const fw = Math.round(canvas.width * scale);
@@ -490,7 +587,7 @@ document.getElementById('recordGif').addEventListener('click', async () => {
     const start = performance.now();
     const loop = now => {
       if (!animRunning) return;
-      render((now - start) / 1000);
+      safeRender((now - start) / 1000);
       rafId = requestAnimationFrame(loop);
     };
     rafId = requestAnimationFrame(loop);
