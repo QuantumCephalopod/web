@@ -39,6 +39,24 @@
     cursor: pointer; font-family: monospace; font-size: 12px;
   }
   button:hover { background: #1d2234; }
+  .pretext-status {
+    margin-bottom: 10px;
+    border: 1px solid #542222;
+    background: #2a1111;
+    color: #ffbaba;
+    padding: 10px;
+    font-size: 12px;
+    display: none;
+  }
+  .pretext-status[data-state="waiting"] {
+    display: block;
+    border-color: #3a3f54;
+    background: #131724;
+    color: #bcc7f8;
+  }
+  .pretext-status[data-state="failed"] {
+    display: block;
+  }
   canvas { display: block; border: 1px solid #23283b; margin-top: 12px; max-width: 100%; }
 </style>
 </head>
@@ -64,6 +82,7 @@
   <button id="recordGif">record GIF</button>
 </div>
 
+<div id="pretextStatus" class="pretext-status" data-state="waiting">Initializing local Pretext runtime…</div>
 <textarea id="text">A woman who repairs instruments lives in a city where all the buildings are tuned to slightly different frequencies. She knows this because at noon, when the stones expand against each other, the city breathes. You can hear it if you press your ear to the wall. She calls this *the consensus*. It happens whether or not anyone listens.
 
 Her workshop is small. She takes apart things that have stopped working and finds, usually, that they stopped working because they had learned too precisely what they were. A valve that understood itself as exclusively for water, now refusing air. A hinge that had decided it was ornamental, stiffening against use.
@@ -174,6 +193,30 @@ function presentFrameWebGL() {
 
 let imgEl = null;
 let lumCache = null, lumW = 0, lumH = 0;
+let pretextFailed = false;
+
+function setPretextFailureState(reason = 'unknown error') {
+  pretextFailed = true;
+  const status = document.getElementById('pretextStatus');
+  status.style.display = '';
+  status.dataset.state = 'failed';
+  status.textContent = `Pretext unavailable (pretext:failed). Rendering is disabled to keep Pretext as source of truth. ${reason}`;
+}
+
+function clearPretextStatus() {
+  const status = document.getElementById('pretextStatus');
+  status.dataset.state = '';
+  status.style.display = 'none';
+}
+
+function requirePretextCore() {
+  if (pretextFailed) return null;
+  const core = window.pretext && window.pretext.core;
+  const ready = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
+  if (ready) return core;
+  setPretextFailureState('Core APIs were not found.');
+  return null;
+}
 
 function setPretextText(el, value) {
   if (!el) return;
@@ -268,29 +311,6 @@ function boxBlur(src, out, n, r) {
   for (let x = 0; x < n; x++) out[x] = buf[Math.min(x + r, n - 1)];
 }
 
-function fallbackLayoutLines(text, effectiveW) {
-  const paragraphs = String(text ?? '').split('\n');
-  const lines = [];
-  for (const paragraph of paragraphs) {
-    if (!paragraph) {
-      lines.push('');
-      continue;
-    }
-    let current = '';
-    for (const ch of paragraph) {
-      const trial = current + ch;
-      if (drawCtx.measureText(trial).width <= effectiveW || current.length === 0) {
-        current = trial;
-        continue;
-      }
-      lines.push(current);
-      current = ch;
-    }
-    lines.push(current);
-  }
-  return lines;
-}
-
 function render(time = 0) {
   const fontSize = +document.getElementById('fontSize').value;
   const press = +document.getElementById('amplitude').value / 100;
@@ -322,22 +342,16 @@ function render(time = 0) {
   drawCtx.textBaseline = 'middle';
   const effectiveW = Math.max(1, W - 2 * padX);
 
-  const core = window.pretext && window.pretext.core;
-  const hasPretext = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
+  const core = requirePretextCore();
+  if (!core) return;
   const fallbackLineHeight = Math.max(10, fontSize * 1.35);
   let lineHeight = fallbackLineHeight;
-  let textLines;
-
-  if (hasPretext) {
-    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
-    const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
-    lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : fallbackLineHeight;
-    const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
-    if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
-    textLines = lines.map((line) => [...line.text]);
-  } else {
-    textLines = fallbackLayoutLines(text, effectiveW).map((line) => [...line]);
-  }
+  const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+  const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
+  lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : fallbackLineHeight;
+  const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
+  if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
+  const textLines = lines.map((line) => [...line.text]);
   const totalLines = Math.max(1, textLines.length);
   const effectiveLineH = H / totalLines;
 
@@ -417,9 +431,16 @@ function render(time = 0) {
 
 render(0);
 window.addEventListener('pretext:ready', () => {
+  clearPretextStatus();
+  pretextFailed = false;
   lineCache = null;
   render(0);
   updateGifInfo();
+});
+window.addEventListener('pretext:failed', (event) => {
+  const reason = event && event.detail && event.detail.message ? event.detail.message : 'Runtime import failed.';
+  setPretextFailureState(reason);
+  lineCache = null;
 });
 
 const GIF_FPS = 12;
