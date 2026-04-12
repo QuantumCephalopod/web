@@ -260,8 +260,10 @@ void main() {
             const t = clamp((now - rippleFadeStartTime) / (rippleDurationMs * 0.6), 0, 1);
             alpha = clamp(0.08 + easeInOut(t) * 0.92, 0, 1);
           } else {
-            const t = clamp((now - rippleStartTime) / (rippleDurationMs * 0.7), 0, 1);
-            alpha = clamp(1.0 - easeInOut(t) * 0.92, 0.08, 1);
+            const cycleMs = Math.max(180, rippleDurationMs);
+            const cycle = ((now - rippleStartTime) % cycleMs) / cycleMs;
+            const pulse = 0.5 - 0.5 * Math.cos(cycle * Math.PI * 2);
+            alpha = clamp(0.22 + pulse * 0.78, 0.08, 1);
           }
         }
 

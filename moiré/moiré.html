@@ -165,37 +165,11 @@ gl.uniform1i(gl.getUniformLocation(program, 'u_tex'), 0);
 
 function presentFrameWebGL() {
   gl.viewport(0, 0, canvas.width, canvas.height);
-  gl.clearColor(0, 0, 0, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, texture);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, drawCanvas);
   gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-}
-
-function layoutLinesFallback(text, maxWidth, lineHeight) {
-  const lines = [];
-  const raw = String(text ?? '').replace(/\r/g, '').split('\n');
-  for (const paragraph of raw) {
-    const words = paragraph.split(/\s+/).filter(Boolean);
-    if (!words.length) {
-      lines.push({ text: '' });
-      continue;
-    }
-    let cur = '';
-    for (const word of words) {
-      const candidate = cur ? `${cur} ${word}` : word;
-      if (drawCtx.measureText(candidate).width <= maxWidth || !cur) {
-        cur = candidate;
-      } else {
-        lines.push({ text: cur });
-        cur = word;
-      }
-    }
-    lines.push({ text: cur });
-  }
-  return { lines: lines.length ? lines : [{ text: 'text' }], lineHeight };
 }
 
 let imgEl = null;
@@ -326,16 +300,14 @@ function render(time = 0) {
   const effectiveW = Math.max(1, W - 2 * padX);
 
   const core = window.pretext && window.pretext.core;
-  let lines;
-  if (core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function') {
-    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
-    const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
-    const lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : Math.max(10, fontSize * 1.35);
-    ({ lines } = core.layoutWithLines(prepared, effectiveW, lineHeight));
-    if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
-  } else {
-    ({ lines } = layoutLinesFallback(text, effectiveW, Math.max(10, fontSize * 1.35)));
-  }
+  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') return;
+
+  const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+  const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
+  const lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : Math.max(10, fontSize * 1.35);
+  const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
+
+  if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
 
   const textLines = lines.map((line) => [...line.text]);
   const totalLines = Math.max(1, textLines.length);
@@ -529,6 +501,6 @@ async function encodeAndSave(frames, btn) {
 
   gif.render();
 }
-</script>
+</script></script>
 </body>
 </html>
