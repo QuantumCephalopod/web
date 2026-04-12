@@ -1,6 +1,6 @@
 (function initPretextRuntime(global) {
-  const PRETEXT_ESM_URL = '/vendor/pretext-upstream/dist/layout.js';
-  const PRETEXT_RICH_INLINE_ESM_URL = '/vendor/pretext-upstream/dist/rich-inline.js';
+  const PRETEXT_ESM_URL = './vendor/pretext-upstream/dist/layout.js';
+  const PRETEXT_RICH_INLINE_ESM_URL = './vendor/pretext-upstream/dist/rich-inline.js';
 
   function px(value, fallback) {
     const n = parseFloat(value);

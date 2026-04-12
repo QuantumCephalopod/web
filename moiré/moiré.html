@@ -214,6 +214,7 @@ function requirePretextCore() {
   const core = window.pretext && window.pretext.core;
   const ready = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
   if (ready) return core;
+  setPretextFailureState('Core APIs were not found.');
   return null;
 }
 
