@@ -78,7 +78,8 @@
         },
       };
 
-      global.dispatchEvent(new Event('pretext:ready'));
+      global.pretextRuntimeDiagnostics.state = 'ready';
+      global.dispatchEvent(new CustomEvent('pretext:ready', { detail: { ...global.pretextRuntimeDiagnostics } }));
     })
     .catch((error) => {
       global.pretext = global.pretext || {

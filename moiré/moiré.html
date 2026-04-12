@@ -245,17 +245,17 @@ document.getElementById('img').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
   const img = new Image();
-  img.onload = () => { imgEl = img; lumCache = null; lineCache = null; render(0); };
+  img.onload = () => { imgEl = img; lumCache = null; lineCache = null; safeRender(0); };
   img.src = URL.createObjectURL(file);
 });
 
 ['fontSize','amplitude','smooth','thickness','invert','whitebg','speed','wave','pad'].forEach(id =>
-  document.getElementById(id).addEventListener('input', () => { if (!animRunning) render(0); })
+  document.getElementById(id).addEventListener('input', () => { if (!animRunning) safeRender(0); })
 );
 ['fontSize','smooth','invert','pad'].forEach(id =>
   document.getElementById(id).addEventListener('input', () => { lineCache = null; })
 );
-document.getElementById('render').addEventListener('click', () => { lineCache = null; render(0); });
+document.getElementById('render').addEventListener('click', () => { lineCache = null; safeRender(0); });
 document.getElementById('save').addEventListener('click', () => {
   const a = document.createElement('a');
   a.download = 'moiree.png';
@@ -270,14 +270,14 @@ document.getElementById('pulse').addEventListener('change', e => {
     const start = performance.now();
     const loop = now => {
       if (!document.getElementById('pulse').checked) { animRunning = false; return; }
-      render((now - start) / 1000);
+      safeRender((now - start) / 1000);
       rafId = requestAnimationFrame(loop);
     };
     rafId = requestAnimationFrame(loop);
   } else {
     animRunning = false;
     if (rafId) cancelAnimationFrame(rafId);
-    render(0);
+    safeRender(0);
   }
 });
 
@@ -312,6 +312,7 @@ function boxBlur(src, out, n, r) {
 }
 
 function render(time = 0) {
+  diag.renderCount += 1;
   const fontSize = +document.getElementById('fontSize').value;
   const press = +document.getElementById('amplitude').value / 100;
   const smoothR = +document.getElementById('smooth').value;
@@ -353,6 +354,7 @@ function render(time = 0) {
   if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
   const textLines = lines.map((line) => [...line.text]);
   const totalLines = Math.max(1, textLines.length);
+  const totalChars = textLines.reduce((sum, line) => sum + line.length, 0);
   const effectiveLineH = H / totalLines;
 
   const cacheKey = `${W},${H},${fontSize},${smoothR},${invert ? 1 : 0},${totalLines},${padX}`;
@@ -388,6 +390,7 @@ function render(time = 0) {
   drawCtx.fillStyle = whitebg ? '#111' : '#e4e4e4';
 
   const dY = new Float32Array(W);
+  let glyphsDrawn = 0;
 
   for (let li = 0; li < totalLines; li++) {
     const { baseY, normDisplace, lumChars } = lineCache[li];
@@ -421,20 +424,38 @@ function render(time = 0) {
       const cos = Math.cos(angle), sin = Math.sin(angle);
       drawCtx.setTransform(cos, sin, -sin, cos, cx, cy);
       drawCtx.fillText(chars[ci], 0, 0);
+      glyphsDrawn += 1;
     }
   }
 
   drawCtx.setTransform(1, 0, 0, 1, 0, 0);
   drawCtx.font = font;
   presentFrameWebGL();
+  updateDiagnostics({
+    lastRender: 'ok',
+    lineCount: totalLines,
+    totalChars,
+    glyphsDrawn,
+  });
 }
 
-render(0);
+function safeRender(time = 0) {
+  try {
+    render(time);
+  } catch (error) {
+    const message = error && error.message ? error.message : String(error);
+    setPretextFailureState(`render exception: ${message}`);
+    updateDiagnostics({ lastRender: `error: ${message}` });
+    console.error('moiré render failed', error);
+  }
+}
+
+safeRender(0);
 window.addEventListener('pretext:ready', () => {
   clearPretextStatus();
   pretextFailed = false;
   lineCache = null;
-  render(0);
+  safeRender(0);
   updateGifInfo();
 });
 window.addEventListener('pretext:failed', (event) => {
@@ -461,6 +482,7 @@ function updateGifInfo() {
 document.getElementById('gifLoops').addEventListener('input', updateGifInfo);
 document.getElementById('speed').addEventListener('input', updateGifInfo);
 updateGifInfo();
+updateDiagnostics();
 
 let gifWorkerUrl = null;
 async function ensureWorkerUrl() {
@@ -492,7 +514,7 @@ document.getElementById('recordGif').addEventListener('click', async () => {
   btn.disabled = true;
 
   for (let i = 0; i < total; i++) {
-    render(i * dt);
+    safeRender(i * dt);
 
     const scale = Math.min(gifW / canvas.width, 1);
     const fw = Math.round(canvas.width * scale);
@@ -511,7 +533,7 @@ document.getElementById('recordGif').addEventListener('click', async () => {
     const start = performance.now();
     const loop = now => {
       if (!animRunning) return;
-      render((now - start) / 1000);
+      safeRender((now - start) / 1000);
       rafId = requestAnimationFrame(loop);
     };
     rafId = requestAnimationFrame(loop);
