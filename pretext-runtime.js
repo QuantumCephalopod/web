@@ -1,8 +1,6 @@
 (function initPretextRuntime(global) {
-  const scriptUrl = (document.currentScript && document.currentScript.src) || global.location.href;
-  const runtimeBaseUrl = new URL('./', scriptUrl);
-  const PRETEXT_ESM_URL = new URL('vendor/pretext-upstream/dist/layout.js', runtimeBaseUrl).href;
-  const PRETEXT_RICH_INLINE_ESM_URL = new URL('vendor/pretext-upstream/dist/rich-inline.js', runtimeBaseUrl).href;
+  const PRETEXT_ESM_URL = './vendor/pretext-upstream/dist/layout.js';
+  const PRETEXT_RICH_INLINE_ESM_URL = './vendor/pretext-upstream/dist/rich-inline.js';
 
   function px(value, fallback) {
     const n = parseFloat(value);
