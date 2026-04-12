@@ -57,15 +57,6 @@
   .pretext-status[data-state="failed"] {
     display: block;
   }
-  .diagnostics {
-    margin: 0 0 10px;
-    border: 1px solid #2a2f42;
-    background: #0e1220;
-    color: #aeb8dd;
-    padding: 8px;
-    font-size: 11px;
-    white-space: pre-wrap;
-  }
   canvas { display: block; border: 1px solid #23283b; margin-top: 12px; max-width: 100%; }
 </style>
 </head>
@@ -92,7 +83,6 @@
 </div>
 
 <div id="pretextStatus" class="pretext-status" data-state="waiting">Initializing local Pretext runtime…</div>
-<pre id="diagnostics" class="diagnostics"></pre>
 <textarea id="text">A woman who repairs instruments lives in a city where all the buildings are tuned to slightly different frequencies. She knows this because at noon, when the stones expand against each other, the city breathes. You can hear it if you press your ear to the wall. She calls this *the consensus*. It happens whether or not anyone listens.
 
 Her workshop is small. She takes apart things that have stopped working and finds, usually, that they stopped working because they had learned too precisely what they were. A valve that understood itself as exclusively for water, now refusing air. A hinge that had decided it was ornamental, stiffening against use.
@@ -204,37 +194,6 @@ function presentFrameWebGL() {
 let imgEl = null;
 let lumCache = null, lumW = 0, lumH = 0;
 let pretextFailed = false;
-const diag = {
-  pretextState: 'loading',
-  pretextError: '',
-  readyEventSeen: false,
-  failedEventSeen: false,
-  renderCount: 0,
-  lastRender: 'not-started',
-  lineCount: 0,
-  totalChars: 0,
-  glyphsDrawn: 0,
-};
-
-function updateDiagnostics(extra = {}) {
-  Object.assign(diag, extra);
-  const runtimeDiag = window.pretextRuntimeDiagnostics || {};
-  const lines = [
-    `pretext.state: ${diag.pretextState}`,
-    `pretext.error: ${diag.pretextError || '(none)'}`,
-    `pretext.readyEventSeen: ${diag.readyEventSeen}`,
-    `pretext.failedEventSeen: ${diag.failedEventSeen}`,
-    `runtime.coreUrl: ${runtimeDiag.coreUrl || '(unknown)'}`,
-    `runtime.richInlineUrl: ${runtimeDiag.richInlineUrl || '(unknown)'}`,
-    `render.count: ${diag.renderCount}`,
-    `render.last: ${diag.lastRender}`,
-    `layout.lines: ${diag.lineCount}`,
-    `layout.totalChars: ${diag.totalChars}`,
-    `draw.glyphs: ${diag.glyphsDrawn}`,
-    `canvas.size: ${canvas.width}x${canvas.height}`,
-  ];
-  document.getElementById('diagnostics').textContent = lines.join('\n');
-}
 
 function setPretextFailureState(reason = 'unknown error') {
   pretextFailed = true;
@@ -242,14 +201,12 @@ function setPretextFailureState(reason = 'unknown error') {
   status.style.display = '';
   status.dataset.state = 'failed';
   status.textContent = `Pretext unavailable (pretext:failed). Rendering is disabled to keep Pretext as source of truth. ${reason}`;
-  updateDiagnostics({ pretextState: 'failed', pretextError: reason, failedEventSeen: true });
 }
 
 function clearPretextStatus() {
   const status = document.getElementById('pretextStatus');
   status.dataset.state = '';
   status.style.display = 'none';
-  updateDiagnostics({ pretextState: 'ready', pretextError: '' });
 }
 
 function requirePretextCore() {
@@ -257,6 +214,7 @@ function requirePretextCore() {
   const core = window.pretext && window.pretext.core;
   const ready = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
   if (ready) return core;
+  setPretextFailureState('Core APIs were not found.');
   return null;
 }
 
@@ -386,10 +344,7 @@ function render(time = 0) {
   const effectiveW = Math.max(1, W - 2 * padX);
 
   const core = requirePretextCore();
-  if (!core) {
-    updateDiagnostics({ lastRender: 'skipped: pretext core unavailable' });
-    return;
-  }
+  if (!core) return;
   const fallbackLineHeight = Math.max(10, fontSize * 1.35);
   let lineHeight = fallbackLineHeight;
   const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
@@ -499,23 +454,14 @@ safeRender(0);
 window.addEventListener('pretext:ready', () => {
   clearPretextStatus();
   pretextFailed = false;
-  updateDiagnostics({ readyEventSeen: true, pretextState: 'ready' });
   lineCache = null;
   safeRender(0);
   updateGifInfo();
 });
 window.addEventListener('pretext:failed', (event) => {
-  const reason = event && event.detail && event.detail.lastError ? event.detail.lastError : 'Runtime import failed.';
+  const reason = event && event.detail && event.detail.message ? event.detail.message : 'Runtime import failed.';
   setPretextFailureState(reason);
   lineCache = null;
-});
-window.addEventListener('error', (event) => {
-  const message = event && event.message ? event.message : 'window error';
-  updateDiagnostics({ lastRender: `window.error: ${message}` });
-});
-window.addEventListener('unhandledrejection', (event) => {
-  const reason = event && event.reason ? (event.reason.message || String(event.reason)) : 'unhandled rejection';
-  updateDiagnostics({ lastRender: `unhandledrejection: ${reason}` });
 });
 
 const GIF_FPS = 12;
