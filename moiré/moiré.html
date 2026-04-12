@@ -268,6 +268,29 @@ function boxBlur(src, out, n, r) {
   for (let x = 0; x < n; x++) out[x] = buf[Math.min(x + r, n - 1)];
 }
 
+function fallbackLayoutLines(text, effectiveW) {
+  const paragraphs = String(text ?? '').split('\n');
+  const lines = [];
+  for (const paragraph of paragraphs) {
+    if (!paragraph) {
+      lines.push('');
+      continue;
+    }
+    let current = '';
+    for (const ch of paragraph) {
+      const trial = current + ch;
+      if (drawCtx.measureText(trial).width <= effectiveW || current.length === 0) {
+        current = trial;
+        continue;
+      }
+      lines.push(current);
+      current = ch;
+    }
+    lines.push(current);
+  }
+  return lines;
+}
+
 function render(time = 0) {
   const fontSize = +document.getElementById('fontSize').value;
   const press = +document.getElementById('amplitude').value / 100;
@@ -300,16 +323,21 @@ function render(time = 0) {
   const effectiveW = Math.max(1, W - 2 * padX);
 
   const core = window.pretext && window.pretext.core;
-  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') return;
+  const hasPretext = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
+  const fallbackLineHeight = Math.max(10, fontSize * 1.35);
+  let lineHeight = fallbackLineHeight;
+  let textLines;
 
-  const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
-  const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
-  const lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : Math.max(10, fontSize * 1.35);
-  const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
-
-  if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
-
-  const textLines = lines.map((line) => [...line.text]);
+  if (hasPretext) {
+    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+    const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
+    lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : fallbackLineHeight;
+    const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
+    if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
+    textLines = lines.map((line) => [...line.text]);
+  } else {
+    textLines = fallbackLayoutLines(text, effectiveW).map((line) => [...line]);
+  }
   const totalLines = Math.max(1, textLines.length);
   const effectiveLineH = H / totalLines;
 
@@ -501,6 +529,6 @@ async function encodeAndSave(frames, btn) {
 
   gif.render();
 }
-</script></script>
+</script>
 </body>
 </html>
