@@ -7,8 +7,27 @@
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #ccc; font-family: monospace; padding: 56px 16px 16px; }
-  .controls { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; align-items: center; }
-  label { display: flex; flex-direction: column; font-size: 11px; color: #888; gap: 2px; }
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(108px, max-content));
+    gap: 10px;
+    margin-bottom: 10px;
+    align-items: end;
+    background:
+      linear-gradient(60deg, rgba(255,255,255,0.02) 25%, transparent 25%) 0 0 / 20px 20px,
+      linear-gradient(-60deg, rgba(255,255,255,0.02) 25%, transparent 25%) 0 0 / 20px 20px,
+      #050608;
+    border: 1px solid #1b1c23;
+    padding: 10px;
+  }
+  .controls > * {
+    clip-path: polygon(0 8%, 100% 0, 92% 100%, 0 92%);
+    background: linear-gradient(155deg, #0d0f15 0%, #151822 100%);
+    border: 1px solid #2a2f42;
+    padding: 6px 8px;
+    min-height: 44px;
+  }
+  label { display: flex; flex-direction: column; font-size: 11px; color: #9aa6ca; gap: 2px; }
   input[type=range] { width: 100px; accent-color: #666; }
   input[type=file] { color: #aaa; font-size: 12px; }
   textarea {
@@ -16,11 +35,11 @@
     font-family: monospace; font-size: 11px; padding: 6px; resize: vertical; margin-bottom: 8px;
   }
   button {
-    background: #222; color: #ccc; border: 1px solid #444; padding: 6px 14px;
+    background: #141724; color: #d8def8; border: 1px solid #394164; padding: 6px 14px;
     cursor: pointer; font-family: monospace; font-size: 12px;
   }
-  button:hover { background: #333; }
-  canvas { display: block; border: 1px solid #222; margin-top: 12px; max-width: 100%; }
+  button:hover { background: #1d2234; }
+  canvas { display: block; border: 1px solid #23283b; margin-top: 12px; max-width: 100%; }
 </style>
 </head>
 <body>
@@ -78,7 +97,106 @@ The drawer stays open all day. Some spaces should be.</textarea>
 <script src="../pretext-runtime.js"></script>
 <script>
 const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
+const drawCanvas = document.createElement('canvas');
+const drawCtx = drawCanvas.getContext('2d');
+const gl = canvas.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true })
+  || canvas.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
+if (!gl || !drawCtx) throw new Error('moiré needs 2d + WebGL support.');
+
+function createShader(gl, type, source) {
+  const shader = gl.createShader(type);
+  gl.shaderSource(shader, source);
+  gl.compileShader(shader);
+  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+    throw new Error(gl.getShaderInfoLog(shader) || 'Shader compile failed');
+  }
+  return shader;
+}
+
+function createProgram(gl, vsSource, fsSource) {
+  const program = gl.createProgram();
+  gl.attachShader(program, createShader(gl, gl.VERTEX_SHADER, vsSource));
+  gl.attachShader(program, createShader(gl, gl.FRAGMENT_SHADER, fsSource));
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(gl.getProgramInfoLog(program) || 'Program link failed');
+  }
+  return program;
+}
+
+const program = createProgram(gl, `
+attribute vec2 a_position;
+varying vec2 v_uv;
+void main() {
+  v_uv = 0.5 * (a_position + 1.0);
+  gl_Position = vec4(a_position, 0.0, 1.0);
+}
+`, `
+precision mediump float;
+uniform sampler2D u_tex;
+varying vec2 v_uv;
+void main() {
+  vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
+  gl_FragColor = texture2D(u_tex, uv);
+}
+`);
+
+gl.useProgram(program);
+const posLoc = gl.getAttribLocation(program, 'a_position');
+const quad = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quad);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -1, -1,
+   1, -1,
+  -1,  1,
+   1,  1,
+]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(posLoc);
+gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+const texture = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, texture);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+gl.uniform1i(gl.getUniformLocation(program, 'u_tex'), 0);
+
+function presentFrameWebGL() {
+  gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, drawCanvas);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+function layoutLinesFallback(text, maxWidth, lineHeight) {
+  const lines = [];
+  const raw = String(text ?? '').replace(/\r/g, '').split('\n');
+  for (const paragraph of raw) {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (!words.length) {
+      lines.push({ text: '' });
+      continue;
+    }
+    let cur = '';
+    for (const word of words) {
+      const candidate = cur ? `${cur} ${word}` : word;
+      if (drawCtx.measureText(candidate).width <= maxWidth || !cur) {
+        cur = candidate;
+      } else {
+        lines.push({ text: cur });
+        cur = word;
+      }
+    }
+    lines.push({ text: cur });
+  }
+  return { lines: lines.length ? lines : [{ text: 'text' }], lineHeight };
+}
 
 let imgEl = null;
 let lumCache = null, lumW = 0, lumH = 0;
@@ -88,7 +206,10 @@ function setPretextText(el, value) {
 
   const pre = window.pretext;
   const core = pre && pre.core;
-  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') return;
+  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') {
+    el.textContent = String(value ?? '');
+    return;
+  }
   const computed = getComputedStyle(el);
   const fontSize = parseFloat(computed.fontSize) || 16;
   const font = `${computed.fontSize} ${computed.fontFamily}`;
@@ -100,8 +221,6 @@ function setPretextText(el, value) {
   el.textContent = lines.map((line) => line.text).join('\n');
 }
 
-// Per-line cache: normalized displacement + smoothed, rebuilt only when
-// image / fontSize / smoothing / invert change — not every animation frame.
 let lineCache = null;
 let lineCacheKey = '';
 
@@ -116,7 +235,6 @@ document.getElementById('img').addEventListener('change', e => {
 ['fontSize','amplitude','smooth','thickness','invert','whitebg','speed','wave','pad'].forEach(id =>
   document.getElementById(id).addEventListener('input', () => { if (!animRunning) render(0); })
 );
-// fontSize / smooth / invert / pad invalidate the line cache
 ['fontSize','smooth','invert','pad'].forEach(id =>
   document.getElementById(id).addEventListener('input', () => { lineCache = null; })
 );
@@ -148,12 +266,11 @@ document.getElementById('pulse').addEventListener('change', e => {
 
 function buildLumField(img, w, h) {
   const off = new OffscreenCanvas(w, h);
-  const oc  = off.getContext('2d');
+  const oc = off.getContext('2d');
   oc.drawImage(img, 0, 0, w, h);
   const px = oc.getImageData(0, 0, w, h).data;
-  const f  = new Float32Array(w * h);
-  for (let i = 0; i < w * h; i++)
-    f[i] = (0.299*px[i*4] + 0.587*px[i*4+1] + 0.114*px[i*4+2]) / 255;
+  const f = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) f[i] = (0.299*px[i*4] + 0.587*px[i*4+1] + 0.114*px[i*4+2]) / 255;
   return f;
 }
 
@@ -162,11 +279,9 @@ function sampleLum(f, w, h, x, y) {
   y = Math.max(0, Math.min(h - 1.001, y));
   const x0 = x|0, y0 = y|0, x1 = x0+1, y1 = y0+1;
   const fx = x-x0, fy = y-y0;
-  return (1-fx)*(1-fy)*f[y0*w+x0] + fx*(1-fy)*f[y0*w+x1] +
-         (1-fx)*fy*f[y1*w+x0]     + fx*fy*f[y1*w+x1];
+  return (1-fx)*(1-fy)*f[y0*w+x0] + fx*(1-fy)*f[y0*w+x1] + (1-fx)*fy*f[y1*w+x0] + fx*fy*f[y1*w+x1];
 }
 
-// Box-blur a Float32Array in place (writes into `out`)
 function boxBlur(src, out, n, r) {
   if (r <= 0) { out.set(src); return; }
   let sum = 0, cnt = 0;
@@ -180,82 +295,69 @@ function boxBlur(src, out, n, r) {
 }
 
 function render(time = 0) {
-  const fontSize  = +document.getElementById('fontSize').value;
-  const press     = +document.getElementById('amplitude').value / 100;
-  const smoothR   = +document.getElementById('smooth').value;
-  const thickAmt  = +document.getElementById('thickness').value / 100;
-  const speed     = +document.getElementById('speed').value / 10;
-  const waveLag   = +document.getElementById('wave').value / 1000;
-  const invert    = document.getElementById('invert').checked;
-  const whitebg   = document.getElementById('whitebg').checked;
-  const text      = document.getElementById('text').value || 'text';
+  const fontSize = +document.getElementById('fontSize').value;
+  const press = +document.getElementById('amplitude').value / 100;
+  const smoothR = +document.getElementById('smooth').value;
+  const thickAmt = +document.getElementById('thickness').value / 100;
+  const speed = +document.getElementById('speed').value / 10;
+  const waveLag = +document.getElementById('wave').value / 1000;
+  const invert = document.getElementById('invert').checked;
+  const whitebg = document.getElementById('whitebg').checked;
+  const text = document.getElementById('text').value || 'text';
 
-  const W = imgEl ? Math.min(imgEl.naturalWidth,  1600) : 900;
+  const W = imgEl ? Math.min(imgEl.naturalWidth, 1600) : 900;
   const H = imgEl ? Math.min(imgEl.naturalHeight, 1200) : 600;
 
-  // Only resize canvas when dimensions actually change (resize clears canvas)
   if (canvas.width !== W || canvas.height !== H) {
     canvas.width = W; canvas.height = H;
+    drawCanvas.width = W; drawCanvas.height = H;
   }
 
-  // Rebuild luminance cache when image / size changes
   if (imgEl && (!lumCache || lumW !== W || lumH !== H)) {
     lumCache = buildLumField(imgEl, W, H);
     lumW = W; lumH = H;
     lineCache = null;
   }
 
-  const padX    = +document.getElementById('pad').value;
-
+  const padX = +document.getElementById('pad').value;
   const font = `${fontSize}px monospace`;
-  ctx.font = font;
-  ctx.textBaseline = 'middle';
+  drawCtx.font = font;
+  drawCtx.textBaseline = 'middle';
   const effectiveW = Math.max(1, W - 2 * padX);
 
-  // Word-wrap through full pretext core API when available.
-  const flat  = text.replace(/\s+/g, ' ').trim();
-  let wrappedLines;
   const core = window.pretext && window.pretext.core;
-  if (!core || typeof core.prepareWithSegments !== 'function' || typeof core.layoutWithLines !== 'function') return;
-  const prepared = core.prepareWithSegments(flat || 'text', font, { whiteSpace: 'pre-wrap' });
-  const stats = typeof core.measureLineStats === 'function'
-    ? core.measureLineStats(prepared, effectiveW)
-    : null;
-  const lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : Math.max(10, fontSize * 1.35);
-  const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
-  wrappedLines = lines.map((line) => line.text);
-
-  // Warm optional range-walker path so advanced APIs are exercised for this layout.
-  if (typeof core.walkLineRanges === 'function') {
-    core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
+  let lines;
+  if (core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function') {
+    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+    const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
+    const lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : Math.max(10, fontSize * 1.35);
+    ({ lines } = core.layoutWithLines(prepared, effectiveW, lineHeight));
+    if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, lineHeight, () => {});
+  } else {
+    ({ lines } = layoutLinesFallback(text, effectiveW, Math.max(10, fontSize * 1.35)));
   }
-  const textLines = wrappedLines.map(line => [...line]);
 
-  const totalLines     = textLines.length;
+  const textLines = lines.map((line) => [...line.text]);
+  const totalLines = Math.max(1, textLines.length);
   const effectiveLineH = H / totalLines;
 
-  // ── Build per-line cache (expensive lum sampling + blur, done once) ───────
   const cacheKey = `${W},${H},${fontSize},${smoothR},${invert ? 1 : 0},${totalLines},${padX}`;
   if (!lineCache || lineCacheKey !== cacheKey) {
     lineCache = [];
     const getLumAt = (x, y) => {
-      let l = lumCache
-        ? sampleLum(lumCache, lumW, lumH, x, y)
-        : (Math.sin(Math.sqrt((x-W/2)**2+(y-H/2)**2) * 0.08) + 1) / 2;
+      const l = lumCache ? sampleLum(lumCache, lumW, lumH, x, y) : (Math.sin(Math.sqrt((x-W/2)**2+(y-H/2)**2) * 0.08) + 1) / 2;
       return invert ? 1 - l : l;
     };
     const r = Math.max(0, Math.round(smoothR));
     const rawD = new Float32Array(W);
-    const smD  = new Float32Array(W);
+    const smD = new Float32Array(W);
 
     for (let li = 0; li < totalLines; li++) {
       const baseY = (li + 0.5) * effectiveLineH;
-      // Raw displacement at press=1 (will scale per-frame)
       for (let x = 0; x < W; x++) rawD[x] = (getLumAt(x, baseY) - 0.5) * 2;
       boxBlur(rawD, smD, W, r);
-      // Lum at baseline for thickness — sampled at padded character positions
       const chars = textLines[li];
-      const spacing = effectiveW / chars.length;
+      const spacing = chars.length ? effectiveW / chars.length : effectiveW;
       const lumChars = new Float32Array(chars.length);
       for (let ci = 0; ci < chars.length; ci++) {
         const x = padX + (ci + 0.5) * spacing;
@@ -266,31 +368,25 @@ function render(time = 0) {
     lineCacheKey = cacheKey;
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  ctx.fillStyle = whitebg ? '#fff' : '#000';
-  ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = whitebg ? '#111' : '#e4e4e4';
+  drawCtx.setTransform(1, 0, 0, 1, 0, 0);
+  drawCtx.fillStyle = whitebg ? '#fff' : '#000';
+  drawCtx.fillRect(0, 0, W, H);
+  drawCtx.fillStyle = whitebg ? '#111' : '#e4e4e4';
 
-  // Pre-compute tangent angles from a temporary displacedY (reused buffer)
   const dY = new Float32Array(W);
 
   for (let li = 0; li < totalLines; li++) {
     const { baseY, normDisplace, lumChars } = lineCache[li];
     const chars = textLines[li];
-    if (!chars.length) continue;
+    if (!chars || !chars.length) continue;
 
-    // Per-line pulse phase
-    const pulse      = 0.5 + 0.5 * Math.sin(time * speed - li * waveLag);
-    const maxD       = effectiveLineH * 0.48 * press * pulse;
-
-    // Apply scale to cached normalized displacement → actual displacedY
+    const pulse = 0.5 + 0.5 * Math.sin(time * speed - li * waveLag);
+    const maxD = effectiveLineH * 0.48 * press * pulse;
     for (let x = 0; x < W; x++) dY[x] = baseY + normDisplace[x] * maxD;
 
-    // Character spacing within padded area
     const spacing = effectiveW / chars.length;
-
     let lastFont = font;
-    ctx.font = font;
+    drawCtx.font = font;
 
     for (let ci = 0; ci < chars.length; ci++) {
       const cx = padX + (ci + 0.5) * spacing;
@@ -298,29 +394,25 @@ function render(time = 0) {
       const cy = dY[xi];
       if (cy < -fontSize * 2 || cy > H + fontSize * 2) continue;
 
-      // Tangent from central difference (3px window)
       const xl = Math.max(0, xi - 2), xr = Math.min(W - 1, xi + 2);
       const angle = Math.atan2(dY[xr] - dY[xl], xr - xl);
 
-      // Thickness: scale font by luminance (cached)
-      const lum   = lumChars[ci];
+      const lum = lumChars[ci];
       const scale = 1 - thickAmt * 0.7 * pulse + (1 - lum) * thickAmt * 1.4 * pulse;
       const fSize = Math.max(2, fontSize * scale);
 
-      // Only change font when size meaningfully differs (avoid thrashing)
       const fStr = `${Math.round(fSize)}px monospace`;
-      if (fStr !== lastFont) { ctx.font = fStr; lastFont = fStr; }
+      if (fStr !== lastFont) { drawCtx.font = fStr; lastFont = fStr; }
 
-      // setTransform is ~3x faster than save/translate/rotate/restore
       const cos = Math.cos(angle), sin = Math.sin(angle);
-      ctx.setTransform(cos, sin, -sin, cos, cx, cy);
-      ctx.fillText(chars[ci], 0, 0);
+      drawCtx.setTransform(cos, sin, -sin, cos, cx, cy);
+      drawCtx.fillText(chars[ci], 0, 0);
     }
   }
 
-  // Restore default transform
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.font = font;
+  drawCtx.setTransform(1, 0, 0, 1, 0, 0);
+  drawCtx.font = font;
+  presentFrameWebGL();
 }
 
 render(0);
@@ -330,7 +422,6 @@ window.addEventListener('pretext:ready', () => {
   updateGifInfo();
 });
 
-// ── GIF export ─────────────────────────────────────────────────────────────
 const GIF_FPS = 12;
 
 function framesPerLoop() {
@@ -339,10 +430,10 @@ function framesPerLoop() {
 }
 
 function updateGifInfo() {
-  const loops  = Math.max(1, +document.getElementById('gifLoops').value || 1);
-  const fpl    = framesPerLoop();
-  const total  = loops * fpl;
-  const secs   = (total / GIF_FPS).toFixed(1);
+  const loops = Math.max(1, +document.getElementById('gifLoops').value || 1);
+  const fpl = framesPerLoop();
+  const total = loops * fpl;
+  const secs = (total / GIF_FPS).toFixed(1);
   setPretextText(document.getElementById('gifInfo'), `= ${total}f / ${secs}s`);
 }
 
@@ -363,15 +454,14 @@ document.getElementById('recordGif').addEventListener('click', async () => {
   const btn = document.getElementById('recordGif');
   if (btn.disabled) return;
 
-  const loops  = Math.max(1, +document.getElementById('gifLoops').value || 1);
-  const gifW   = +document.getElementById('gifW').value;
-  const delay  = Math.round(1000 / GIF_FPS);
-  const fpl    = framesPerLoop();
-  const total  = loops * fpl;
-  const dt     = 1 / GIF_FPS;
+  const loops = Math.max(1, +document.getElementById('gifLoops').value || 1);
+  const gifW = +document.getElementById('gifW').value;
+  const delay = Math.round(1000 / GIF_FPS);
+  const fpl = framesPerLoop();
+  const total = loops * fpl;
+  const dt = 1 / GIF_FPS;
   const frames = [];
 
-  // Pause live animation during capture
   const wasRunning = animRunning;
   if (animRunning) {
     animRunning = false;
@@ -380,12 +470,11 @@ document.getElementById('recordGif').addEventListener('click', async () => {
 
   btn.disabled = true;
 
-  // Render every frame at mathematically exact t — guaranteed seamless loop
   for (let i = 0; i < total; i++) {
     render(i * dt);
 
     const scale = Math.min(gifW / canvas.width, 1);
-    const fw = Math.round(canvas.width  * scale);
+    const fw = Math.round(canvas.width * scale);
     const fh = Math.round(canvas.height * scale);
     const tmp = document.createElement('canvas');
     tmp.width = fw; tmp.height = fh;
@@ -393,10 +482,9 @@ document.getElementById('recordGif').addEventListener('click', async () => {
     frames.push({ c: tmp, delay });
 
     setPretextText(btn, `${i + 1} / ${total} frames`);
-    if (i % 8 === 7) await new Promise(r => setTimeout(r, 0)); // keep UI responsive
+    if (i % 8 === 7) await new Promise(r => setTimeout(r, 0));
   }
 
-  // Resume animation if it was running
   if (wasRunning) {
     animRunning = true;
     const start = performance.now();
