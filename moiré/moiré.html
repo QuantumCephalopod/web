@@ -460,7 +460,12 @@ window.addEventListener('pretext:ready', () => {
   updateGifInfo();
 });
 window.addEventListener('pretext:failed', (event) => {
-  const reason = event && event.detail && event.detail.message ? event.detail.message : 'Runtime import failed.';
+  const detail = event && event.detail ? event.detail : null;
+  const reason =
+    (detail && detail.message) ||
+    (detail && detail.error && detail.error.message) ||
+    (detail && detail.error) ||
+    'Runtime import failed.';
   setPretextFailureState(reason);
   lineCache = null;
 });
