@@ -240,6 +240,7 @@ function setPretextText(el, value) {
 
 let lineCache = null;
 let lineCacheKey = '';
+const diag = { renderCount: 0 };
 
 document.getElementById('img').addEventListener('change', e => {
   const file = e.target.files[0];
@@ -459,7 +460,12 @@ window.addEventListener('pretext:ready', () => {
   updateGifInfo();
 });
 window.addEventListener('pretext:failed', (event) => {
-  const reason = event && event.detail && event.detail.message ? event.detail.message : 'Runtime import failed.';
+  const detail = event && event.detail ? event.detail : null;
+  const reason =
+    (detail && detail.message) ||
+    (detail && detail.error && detail.error.message) ||
+    (detail && detail.error) ||
+    'Runtime import failed.';
   setPretextFailureState(reason);
   lineCache = null;
 });
