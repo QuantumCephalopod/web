@@ -57,15 +57,6 @@
   .pretext-status[data-state="failed"] {
     display: block;
   }
-  .diagnostics {
-    margin: 0 0 10px;
-    border: 1px solid #2a2f42;
-    background: #0e1220;
-    color: #aeb8dd;
-    padding: 8px;
-    font-size: 11px;
-    white-space: pre-wrap;
-  }
   canvas { display: block; border: 1px solid #23283b; margin-top: 12px; max-width: 100%; }
 </style>
 </head>
@@ -92,7 +83,6 @@
 </div>
 
 <div id="pretextStatus" class="pretext-status" data-state="waiting">Initializing local Pretext runtime…</div>
-<pre id="diagnostics" class="diagnostics"></pre>
 <textarea id="text">A woman who repairs instruments lives in a city where all the buildings are tuned to slightly different frequencies. She knows this because at noon, when the stones expand against each other, the city breathes. You can hear it if you press your ear to the wall. She calls this *the consensus*. It happens whether or not anyone listens.
 
 Her workshop is small. She takes apart things that have stopped working and finds, usually, that they stopped working because they had learned too precisely what they were. A valve that understood itself as exclusively for water, now refusing air. A hinge that had decided it was ornamental, stiffening against use.
@@ -204,44 +194,6 @@ function presentFrameWebGL() {
 let imgEl = null;
 let lumCache = null, lumW = 0, lumH = 0;
 let pretextFailed = false;
-const MOIRE_BUILD_ID = 'moire-2026-04-12-codex4';
-const diagnosticsState = window.__moireDiagnostics || {
-  buildId: MOIRE_BUILD_ID,
-  pretextState: 'loading',
-  pretextError: '',
-  renderError: '',
-  readyEventSeen: false,
-  failedEventSeen: false,
-  renderCount: 0,
-  lastRender: 'not-started',
-  lineCount: 0,
-  totalChars: 0,
-  glyphsDrawn: 0,
-};
-diagnosticsState.buildId = MOIRE_BUILD_ID;
-window.__moireDiagnostics = diagnosticsState;
-
-function updateDiagnostics(extra = {}) {
-  Object.assign(diagnosticsState, extra);
-  const runtimeDiag = window.pretextRuntimeDiagnostics || {};
-  const lines = [
-    `pretext.state: ${diagnosticsState.pretextState}`,
-    `pretext.error: ${diagnosticsState.pretextError || '(none)'}`,
-    `render.error: ${diagnosticsState.renderError || '(none)'}`,
-    `build.id: ${diagnosticsState.buildId}`,
-    `pretext.readyEventSeen: ${diagnosticsState.readyEventSeen}`,
-    `pretext.failedEventSeen: ${diagnosticsState.failedEventSeen}`,
-    `runtime.coreUrl: ${runtimeDiag.coreUrl || '(unknown)'}`,
-    `runtime.richInlineUrl: ${runtimeDiag.richInlineUrl || '(unknown)'}`,
-    `render.count: ${diagnosticsState.renderCount}`,
-    `render.last: ${diagnosticsState.lastRender}`,
-    `layout.lines: ${diagnosticsState.lineCount}`,
-    `layout.totalChars: ${diagnosticsState.totalChars}`,
-    `draw.glyphs: ${diagnosticsState.glyphsDrawn}`,
-    `canvas.size: ${canvas.width}x${canvas.height}`,
-  ];
-  document.getElementById('diagnostics').textContent = lines.join('\n');
-}
 
 function setPretextFailureState(reason = 'unknown error') {
   pretextFailed = true;
@@ -249,22 +201,12 @@ function setPretextFailureState(reason = 'unknown error') {
   status.style.display = '';
   status.dataset.state = 'failed';
   status.textContent = `Pretext unavailable (pretext:failed). Rendering is disabled to keep Pretext as source of truth. ${reason}`;
-  updateDiagnostics({ pretextState: 'failed', pretextError: reason, failedEventSeen: true });
 }
 
 function clearPretextStatus() {
   const status = document.getElementById('pretextStatus');
   status.dataset.state = '';
   status.style.display = 'none';
-  updateDiagnostics({ pretextState: 'ready', pretextError: '', renderError: '' });
-}
-
-function setRenderFailureState(reason = 'unknown render error') {
-  const status = document.getElementById('pretextStatus');
-  status.style.display = '';
-  status.dataset.state = 'failed';
-  status.textContent = `Render error (Pretext runtime may still be ready): ${reason}`;
-  updateDiagnostics({ renderError: reason });
 }
 
 function requirePretextCore() {
@@ -272,6 +214,7 @@ function requirePretextCore() {
   const core = window.pretext && window.pretext.core;
   const ready = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
   if (ready) return core;
+  setPretextFailureState('Core APIs were not found.');
   return null;
 }
 
@@ -369,7 +312,7 @@ function boxBlur(src, out, n, r) {
 }
 
 function render(time = 0) {
-  diagnosticsState.renderCount += 1;
+  diag.renderCount += 1;
   const fontSize = +document.getElementById('fontSize').value;
   const press = +document.getElementById('amplitude').value / 100;
   const smoothR = +document.getElementById('smooth').value;
@@ -401,10 +344,7 @@ function render(time = 0) {
   const effectiveW = Math.max(1, W - 2 * padX);
 
   const core = requirePretextCore();
-  if (!core) {
-    updateDiagnostics({ lastRender: 'skipped: pretext core unavailable', renderError: '' });
-    return;
-  }
+  if (!core) return;
   const fallbackLineHeight = Math.max(10, fontSize * 1.35);
   let lineHeight = fallbackLineHeight;
   const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
@@ -493,7 +433,6 @@ function render(time = 0) {
   presentFrameWebGL();
   updateDiagnostics({
     lastRender: 'ok',
-    renderError: '',
     lineCount: totalLines,
     totalChars,
     glyphsDrawn,
@@ -505,7 +444,7 @@ function safeRender(time = 0) {
     render(time);
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
-    setRenderFailureState(message);
+    setPretextFailureState(`render exception: ${message}`);
     updateDiagnostics({ lastRender: `error: ${message}` });
     console.error('moiré render failed', error);
   }
@@ -515,23 +454,14 @@ safeRender(0);
 window.addEventListener('pretext:ready', () => {
   clearPretextStatus();
   pretextFailed = false;
-  updateDiagnostics({ readyEventSeen: true, pretextState: 'ready' });
   lineCache = null;
   safeRender(0);
   updateGifInfo();
 });
 window.addEventListener('pretext:failed', (event) => {
-  const reason = event && event.detail && event.detail.lastError ? event.detail.lastError : 'Runtime import failed.';
+  const reason = event && event.detail && event.detail.message ? event.detail.message : 'Runtime import failed.';
   setPretextFailureState(reason);
   lineCache = null;
-});
-window.addEventListener('error', (event) => {
-  const message = event && event.message ? event.message : 'window error';
-  updateDiagnostics({ lastRender: `window.error: ${message}` });
-});
-window.addEventListener('unhandledrejection', (event) => {
-  const reason = event && event.reason ? (event.reason.message || String(event.reason)) : 'unhandled rejection';
-  updateDiagnostics({ lastRender: `unhandledrejection: ${reason}` });
 });
 
 const GIF_FPS = 12;
