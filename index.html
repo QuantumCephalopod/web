@@ -180,7 +180,7 @@
         moireView.hidden = !showMoire;
         if (showMoire && moireFrame.dataset.loaded !== '1') {
           moireFrame.dataset.loaded = '1';
-          moireFrame.src = 'moiré/moiré.html';
+          moireFrame.src = 'moiré/moiré.html?v=20260412-2';
         }
         const hash = showMoire ? '#moire' : '#f33lings';
         if (location.hash !== hash) history.replaceState(null, '', hash);
