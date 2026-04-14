@@ -1,6 +1,13 @@
 (function initPretextRuntime(global) {
-  const PRETEXT_ESM_URL = './vendor/pretext-upstream/dist/layout.js';
-  const PRETEXT_RICH_INLINE_ESM_URL = './vendor/pretext-upstream/dist/rich-inline.js';
+  const runtimeScript = typeof document !== 'undefined' ? document.currentScript : null;
+  const runtimeBaseUrl = runtimeScript && runtimeScript.src
+    ? new URL('.', runtimeScript.src)
+    : new URL('./', global.location.href);
+  const PRETEXT_ESM_URL = new URL('vendor/pretext-upstream/dist/layout.js', runtimeBaseUrl).href;
+  const PRETEXT_RICH_INLINE_ESM_URL = new URL('vendor/pretext-upstream/dist/rich-inline.js', runtimeBaseUrl).href;
+  const diagnostics = global.pretextRuntimeDiagnostics || {};
+  diagnostics.state = diagnostics.state || 'loading';
+  global.pretextRuntimeDiagnostics = diagnostics;
 
   function px(value, fallback) {
     const n = parseFloat(value);
@@ -78,15 +85,18 @@
         },
       };
 
-      global.pretextRuntimeDiagnostics.state = 'ready';
-      global.dispatchEvent(new CustomEvent('pretext:ready', { detail: { ...global.pretextRuntimeDiagnostics } }));
+      diagnostics.state = 'ready';
+      diagnostics.error = null;
+      global.dispatchEvent(new CustomEvent('pretext:ready', { detail: { ...diagnostics } }));
     })
     .catch((error) => {
       global.pretext = global.pretext || {
         core: null,
         richInline: null,
       };
+      diagnostics.state = 'failed';
+      diagnostics.error = error instanceof Error ? error.message : String(error);
       console.error('Failed to load local @chenglou/pretext runtime', error);
-      global.dispatchEvent(new CustomEvent('pretext:failed', { detail: error }));
+      global.dispatchEvent(new CustomEvent('pretext:failed', { detail: { error, ...diagnostics } }));
     });
 })(window);
