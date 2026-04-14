@@ -82,7 +82,7 @@
   <button id="recordGif">record GIF</button>
 </div>
 
-<div id="pretextStatus" class="pretext-status" data-state="waiting">Initializing local Pretext runtime…</div>
+<div id="pretextStatus" class="pretext-status" data-state="waiting" data-failure-kind="none">Initializing local Pretext runtime…</div>
 <textarea id="text">A woman who repairs instruments lives in a city where all the buildings are tuned to slightly different frequencies. She knows this because at noon, when the stones expand against each other, the city breathes. You can hear it if you press your ear to the wall. She calls this *the consensus*. It happens whether or not anyone listens.
 
 Her workshop is small. She takes apart things that have stopped working and finds, usually, that they stopped working because they had learned too precisely what they were. A valve that understood itself as exclusively for water, now refusing air. A hinge that had decided it was ornamental, stiffening against use.
@@ -113,6 +113,7 @@ The drawer stays open all day. Some spaces should be.</textarea>
 
 <canvas id="canvas"></canvas>
 
+<script src="./pretext-diagnostics.js?v=20260414-1"></script>
 <script src="../pretext-runtime.js?v=20260413-1"></script>
 <script>
 const canvas = document.getElementById('canvas');
@@ -194,28 +195,23 @@ function presentFrameWebGL() {
 let imgEl = null;
 let lumCache = null, lumW = 0, lumH = 0;
 let pretextFailed = false;
+const pretextDiagnostics = window.pretextStatusDiagnostics;
 
-function setPretextFailureState(reason = 'unknown error') {
+function setPretextFailureState(failureKind, reason = 'unknown error') {
   pretextFailed = true;
   const status = document.getElementById('pretextStatus');
-  status.style.display = '';
-  status.dataset.state = 'failed';
-  status.textContent = `Pretext unavailable (pretext:failed). Rendering is disabled to keep Pretext as source of truth. ${reason}`;
+  pretextDiagnostics.applyFailureStatus(status, failureKind, reason);
 }
 
 function clearPretextStatus() {
   const status = document.getElementById('pretextStatus');
-  status.dataset.state = '';
-  status.style.display = 'none';
+  pretextDiagnostics.clearStatus(status);
 }
 
 function requirePretextCore() {
-  if (pretextFailed) return null;
-  const core = window.pretext && window.pretext.core;
-  const ready = core && typeof core.prepareWithSegments === 'function' && typeof core.layoutWithLines === 'function';
-  if (ready) return core;
-  setPretextFailureState('Core APIs were not found.');
-  return null;
+  return pretextDiagnostics.requirePretextCore(pretextFailed, window.pretext, (failureKind, reason) => {
+    setPretextFailureState(failureKind, reason);
+  });
 }
 
 function setPretextText(el, value) {
@@ -240,7 +236,7 @@ function setPretextText(el, value) {
 
 let lineCache = null;
 let lineCacheKey = '';
-const diag = { renderCount: 0 };
+const diag = { renderCount: 0, forceBadRenderCall: false };
 
 document.getElementById('img').addEventListener('change', e => {
   const file = e.target.files[0];
@@ -346,6 +342,10 @@ function render(time = 0) {
 
   const core = requirePretextCore();
   if (!core) return;
+  if (diag.forceBadRenderCall) {
+    diag.forceBadRenderCall = false;
+    core.__forcedBadCall();
+  }
   const fallbackLineHeight = Math.max(10, fontSize * 1.35);
   let lineHeight = fallbackLineHeight;
   const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
@@ -441,14 +441,14 @@ function render(time = 0) {
 }
 
 function safeRender(time = 0) {
-  try {
-    render(time);
-  } catch (error) {
-    const message = error && error.message ? error.message : String(error);
-    setPretextFailureState(`render exception: ${message}`);
-    updateDiagnostics({ lastRender: `error: ${message}` });
-    console.error('moiré render failed', error);
-  }
+  pretextDiagnostics.runRenderSafely(
+    () => render(time),
+    (failureKind, reason, error) => {
+      setPretextFailureState(failureKind, reason);
+      updateDiagnostics({ lastRender: `error: ${reason}` });
+      console.error('moiré render failed', error);
+    },
+  );
 }
 
 safeRender(0);
@@ -460,14 +460,10 @@ window.addEventListener('pretext:ready', () => {
   updateGifInfo();
 });
 window.addEventListener('pretext:failed', (event) => {
-  const detail = event && event.detail ? event.detail : null;
-  const reason =
-    (detail && detail.message) ||
-    (detail && detail.error && detail.error.message) ||
-    (detail && detail.error) ||
-    'Runtime import failed.';
-  setPretextFailureState(reason);
+  const handled = pretextDiagnostics.handlePretextFailedEvent(document.getElementById('pretextStatus'), event);
+  pretextFailed = true;
   lineCache = null;
+  updateDiagnostics({ lastRender: `error: ${handled.failureKind}` });
 });
 
 const GIF_FPS = 12;
@@ -578,6 +574,28 @@ async function encodeAndSave(frames, btn) {
 
   gif.render();
 }
+
+window.__moireDiagnosticsTestHooks = {
+  triggerRuntimeImportFailure(message = 'Runtime import failed (test).') {
+    window.dispatchEvent(new CustomEvent('pretext:failed', {
+      detail: {
+        failureKind: pretextDiagnostics.FAILURE_RUNTIME_IMPORT,
+        message,
+      },
+    }));
+  },
+  triggerMissingCoreApi() {
+    pretextFailed = false;
+    window.pretext = { core: {} };
+    requirePretextCore();
+  },
+  triggerRenderException() {
+    pretextFailed = false;
+    diag.forceBadRenderCall = true;
+    safeRender(0);
+  },
+};
+
 </script>
 </body>
 </html>

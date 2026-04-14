@@ -7,6 +7,7 @@
   const PRETEXT_RICH_INLINE_ESM_URL = new URL('vendor/pretext-upstream/dist/rich-inline.js', runtimeBaseUrl).href;
   const diagnostics = global.pretextRuntimeDiagnostics || {};
   diagnostics.state = diagnostics.state || 'loading';
+  diagnostics.failureKind = diagnostics.failureKind || null;
   global.pretextRuntimeDiagnostics = diagnostics;
 
   function px(value, fallback) {
@@ -87,6 +88,7 @@
 
       diagnostics.state = 'ready';
       diagnostics.error = null;
+      diagnostics.failureKind = null;
       global.dispatchEvent(new CustomEvent('pretext:ready', { detail: { ...diagnostics } }));
     })
     .catch((error) => {
@@ -95,6 +97,7 @@
         richInline: null,
       };
       diagnostics.state = 'failed';
+      diagnostics.failureKind = 'runtime-import-failed';
       diagnostics.error = error instanceof Error ? error.message : String(error);
       console.error('Failed to load local @chenglou/pretext runtime', error);
       global.dispatchEvent(new CustomEvent('pretext:failed', { detail: { error, ...diagnostics } }));
