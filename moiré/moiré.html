@@ -237,6 +237,8 @@ function setPretextText(el, value) {
 
 let lineCache = null;
 let lineCacheKey = '';
+let pretextLayoutCache = null;
+let pretextLayoutCacheKey = '';
 const diag = { renderCount: 0, forceBadRenderCall: false };
 const diagnosticsState = {
   lastRender: 'pending',
@@ -265,9 +267,9 @@ document.getElementById('img').addEventListener('change', e => {
   document.getElementById(id).addEventListener('input', () => { if (!animRunning) safeRender(0); })
 );
 ['fontSize','smooth','invert','pad'].forEach(id =>
-  document.getElementById(id).addEventListener('input', () => { lineCache = null; })
+  document.getElementById(id).addEventListener('input', () => { lineCache = null; pretextLayoutCache = null; })
 );
-document.getElementById('render').addEventListener('click', () => { lineCache = null; safeRender(0); });
+document.getElementById('render').addEventListener('click', () => { lineCache = null; pretextLayoutCache = null; safeRender(0); });
 document.getElementById('save').addEventListener('click', () => {
   const a = document.createElement('a');
   a.download = 'moiree.png';
@@ -362,12 +364,19 @@ function render(time = 0) {
     core.__forcedBadCall();
   }
   const fallbackLineHeight = Math.max(10, fontSize * 1.35);
-  let lineHeight = fallbackLineHeight;
-  const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
-  const stats = typeof core.measureLineStats === 'function' ? core.measureLineStats(prepared, effectiveW) : null;
-  lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : fallbackLineHeight;
-  const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
-  if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, () => {});
+  const pretextLayoutKey = `${font}§${effectiveW}§${text}`;
+  if (!pretextLayoutCache || pretextLayoutCacheKey !== pretextLayoutKey) {
+    const prepared = core.prepareWithSegments(text, font, { whiteSpace: 'pre-wrap' });
+    const stats = typeof core.measureLineStats === 'function'
+      ? core.measureLineStats(prepared, effectiveW)
+      : null;
+    const lineHeight = stats && Number.isFinite(stats.lineHeight) ? stats.lineHeight : fallbackLineHeight;
+    const { lines } = core.layoutWithLines(prepared, effectiveW, lineHeight);
+    if (typeof core.walkLineRanges === 'function') core.walkLineRanges(prepared, effectiveW, () => {});
+    pretextLayoutCache = { lines };
+    pretextLayoutCacheKey = pretextLayoutKey;
+  }
+  const { lines } = pretextLayoutCache;
   const textLines = lines.map((line) => [...line.text]);
   const totalLines = Math.max(1, textLines.length);
   const totalChars = textLines.reduce((sum, line) => sum + line.length, 0);
@@ -471,6 +480,8 @@ window.addEventListener('pretext:ready', () => {
   clearPretextStatus();
   pretextFailed = false;
   lineCache = null;
+  pretextLayoutCache = null;
+  pretextLayoutCacheKey = '';
   safeRender(0);
   updateGifInfo();
 });
@@ -478,6 +489,8 @@ window.addEventListener('pretext:failed', (event) => {
   const handled = pretextDiagnostics.handlePretextFailedEvent(document.getElementById('pretextStatus'), event);
   pretextFailed = true;
   lineCache = null;
+  pretextLayoutCache = null;
+  pretextLayoutCacheKey = '';
   updateDiagnostics({ lastRender: `error: ${handled.failureKind}` });
 });
 
