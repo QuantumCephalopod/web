@@ -83,6 +83,7 @@
 </div>
 
 <div id="pretextStatus" class="pretext-status" data-state="waiting" data-failure-kind="none">Initializing local Pretext runtime…</div>
+<div id="diagnostics" style="margin-bottom:8px;font-size:11px;color:#7d89b6;">render: pending · lines: — · chars: — · glyphs: —</div>
 <textarea id="text">A woman who repairs instruments lives in a city where all the buildings are tuned to slightly different frequencies. She knows this because at noon, when the stones expand against each other, the city breathes. You can hear it if you press your ear to the wall. She calls this *the consensus*. It happens whether or not anyone listens.
 
 Her workshop is small. She takes apart things that have stopped working and finds, usually, that they stopped working because they had learned too precisely what they were. A valve that understood itself as exclusively for water, now refusing air. A hinge that had decided it was ornamental, stiffening against use.
@@ -237,6 +238,20 @@ function setPretextText(el, value) {
 let lineCache = null;
 let lineCacheKey = '';
 const diag = { renderCount: 0, forceBadRenderCall: false };
+const diagnosticsState = {
+  lastRender: 'pending',
+  lineCount: null,
+  totalChars: null,
+  glyphsDrawn: null,
+};
+
+function updateDiagnostics(partial = {}) {
+  if (partial && typeof partial === 'object') Object.assign(diagnosticsState, partial);
+  const node = document.getElementById('diagnostics');
+  if (!node) return;
+  const fmt = (v) => (v == null ? '—' : String(v));
+  node.textContent = `render: ${fmt(diagnosticsState.lastRender)} · lines: ${fmt(diagnosticsState.lineCount)} · chars: ${fmt(diagnosticsState.totalChars)} · glyphs: ${fmt(diagnosticsState.glyphsDrawn)}`;
+}
 
 document.getElementById('img').addEventListener('change', e => {
   const file = e.target.files[0];
