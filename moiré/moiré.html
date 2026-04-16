@@ -15,6 +15,34 @@
       #050608;
     border: 1px solid #1b1c23;
     padding: 10px;
+    display: flex;
+  }
+  .vertex-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    width: 100%;
+    height: 100%;
+  }
+  .vertex-card {
+    background: linear-gradient(155deg, #0d0f15 0%, #151822 100%);
+    border: 1px solid #2a2f42;
+    padding: 10px;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .vertex-title {
+    font-size: 11px;
+    color: #d2dbff;
+    letter-spacing: 0.02em;
+  }
+  .vertex-sub {
+    font-size: 10px;
+    color: #8fa0d6;
+    margin-top: -2px;
   }
   .vertex-grid {
     display: grid;
@@ -67,8 +95,32 @@
   input[type=range] { width: 100px; accent-color: #666; }
   input[type=file] { color: #aaa; font-size: 12px; }
   textarea {
-    width: 100%; height: 120px; background: #111; color: #ddd; border: 1px solid #333;
+    width: 100%; background: #111; color: #ddd; border: 1px solid #333;
     font-family: monospace; font-size: 11px; padding: 6px; resize: vertical; margin-bottom: 8px;
+  }
+  .text-panel {
+    aspect-ratio: 1 / 1;
+    background:
+      linear-gradient(60deg, rgba(255,255,255,0.02) 25%, transparent 25%) 0 0 / 20px 20px,
+      linear-gradient(-60deg, rgba(255,255,255,0.02) 25%, transparent 25%) 0 0 / 20px 20px,
+      #050608;
+    border: 1px solid #1b1c23;
+    padding: 10px;
+    display: flex;
+  }
+  #text {
+    height: 100%;
+    margin-bottom: 0;
+  }
+  @media (max-width: 980px) {
+    .workspace-top {
+      grid-template-columns: 1fr;
+    }
+    .controls,
+    .text-panel {
+      aspect-ratio: auto;
+      min-height: 420px;
+    }
   }
   button {
     background: #141724; color: #d8def8; border: 1px solid #394164; padding: 6px 14px;
@@ -244,6 +296,21 @@ It stays pointing at the wall.
 Later the girl returns. She takes the compass without looking at it, puts it in her coat pocket. The woman watches her walk into the city, which is still breathing, expanding by fractions into all adjacent things.
 
 The drawer stays open all day. Some spaces should be.</textarea>
+  </div>
+</div>
+
+<div class="utility-bar">
+  <input type="file" id="img" accept="image/*">
+  <button id="render">render</button>
+  <button id="save">save PNG</button>
+  <label>loops<input type="number" id="gifLoops" min="1" max="5" value="1" style="width:40px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
+  <span id="gifInfo" style="font-size:11px;color:#666;align-self:center"></span>
+  <label>gif px<input type="number" id="gifW" min="200" max="1200" value="600" style="width:55px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
+  <button id="recordGif">record GIF</button>
+</div>
+
+<div id="pretextStatus" class="pretext-status" data-state="waiting" data-failure-kind="none">Initializing local Pretext runtime…</div>
+<div id="diagnostics" style="margin-bottom:8px;font-size:11px;color:#7d89b6;">render: pending · lines: — · chars: — · glyphs: —</div>
 
 <canvas id="canvas"></canvas>
 
