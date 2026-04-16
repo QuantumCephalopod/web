@@ -145,47 +145,6 @@
   .pretext-status[data-state="failed"] {
     display: block;
   }
-  .tetra-panel {
-    margin-bottom: 10px;
-    border: 1px solid #2a2f42;
-    background: linear-gradient(155deg, #0d0f15 0%, #151822 100%);
-    padding: 10px;
-  }
-  .tetra-title {
-    font-size: 11px;
-    color: #b8c3ea;
-    margin-bottom: 8px;
-  }
-  .tetra-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 8px;
-  }
-  .tetra-node {
-    border: 1px solid #2b3044;
-    background: #111522;
-    padding: 8px;
-  }
-  .tetra-node label {
-    font-size: 10px;
-    color: #9fb0e8;
-  }
-  .tetra-node .node-letter {
-    font-weight: 700;
-    color: #d7def7;
-    margin-bottom: 4px;
-  }
-  .tetra-actions {
-    margin-top: 8px;
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    align-items: center;
-  }
-  .tetra-hint {
-    font-size: 10px;
-    color: #7f8bb5;
-  }
   canvas { display: block; border: 1px solid #23283b; margin-top: 12px; max-width: 100%; }
 </style>
 </head>
@@ -229,41 +188,6 @@
     <span id="gifInfo" style="font-size:11px;color:#666;align-self:center"></span>
     <label>gif px<input type="number" id="gifW" min="200" max="1200" value="600" style="width:55px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
     <button id="recordGif">record GIF</button>
-  </div>
-</div>
-
-<div class="tetra-panel">
-  <div class="tetra-title">tetra mix (w/x/y/z): blend four poles, then derive controls</div>
-  <div class="tetra-grid">
-    <div class="tetra-node">
-      <div class="node-letter">w · structure</div>
-      <label>weight
-        <input type="range" id="tetraW" min="0" max="100" value="25">
-      </label>
-    </div>
-    <div class="tetra-node">
-      <div class="node-letter">x · pressure</div>
-      <label>weight
-        <input type="range" id="tetraX" min="0" max="100" value="25">
-      </label>
-    </div>
-    <div class="tetra-node">
-      <div class="node-letter">y · flow</div>
-      <label>weight
-        <input type="range" id="tetraY" min="0" max="100" value="25">
-      </label>
-    </div>
-    <div class="tetra-node">
-      <div class="node-letter">z · void</div>
-      <label>weight
-        <input type="range" id="tetraZ" min="0" max="100" value="25">
-      </label>
-    </div>
-  </div>
-  <div class="tetra-actions">
-    <button id="tetraApply">apply tetra mix</button>
-    <button id="tetraReset">reset 25/25/25/25</button>
-    <span class="tetra-hint" id="tetraHint">active mix: w 25 · x 25 · y 25 · z 25</span>
   </div>
 </div>
 
