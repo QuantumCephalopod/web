@@ -2,7 +2,9 @@
   "name": "web-smoke-tests",
   "private": true,
   "scripts": {
-    "test:browser": "playwright test"
+    "test:browser": "playwright test -c tests/playwright.config.js",
+    "test:node": "node --test tests/node/*.test.mjs",
+    "test:verify-moire-pretext": "bash tests/scripts/verify-moire-pretext.sh"
   },
   "devDependencies": {
     "@playwright/test": "^1.53.0"
