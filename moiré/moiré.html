@@ -8,11 +8,7 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0a0a0a; color: #ccc; font-family: monospace; padding: 56px 16px 16px; }
   .controls {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(108px, max-content));
-    gap: 10px;
     margin-bottom: 10px;
-    align-items: end;
     background:
       linear-gradient(60deg, rgba(255,255,255,0.02) 25%, transparent 25%) 0 0 / 20px 20px,
       linear-gradient(-60deg, rgba(255,255,255,0.02) 25%, transparent 25%) 0 0 / 20px 20px,
@@ -20,7 +16,47 @@
     border: 1px solid #1b1c23;
     padding: 10px;
   }
-  .controls > * {
+  .vertex-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+    gap: 10px;
+    max-width: 760px;
+    margin-bottom: 10px;
+  }
+  .vertex-card {
+    background: linear-gradient(155deg, #0d0f15 0%, #151822 100%);
+    border: 1px solid #2a2f42;
+    padding: 10px;
+    aspect-ratio: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .vertex-title {
+    font-size: 11px;
+    color: #d2dbff;
+    letter-spacing: 0.02em;
+  }
+  .vertex-sub {
+    font-size: 10px;
+    color: #8fa0d6;
+    margin-top: -2px;
+  }
+  .vertex-card label {
+    background: rgba(11, 14, 22, 0.7);
+    border: 1px solid #252b42;
+    padding: 6px 7px;
+    font-size: 10px;
+    color: #aeb9e6;
+  }
+  .utility-bar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(108px, max-content));
+    gap: 10px;
+    align-items: end;
+  }
+  .utility-bar > * {
     clip-path: polygon(0 8%, 100% 0, 92% 100%, 0 92%);
     background: linear-gradient(155deg, #0d0f15 0%, #151822 100%);
     border: 1px solid #2a2f42;
@@ -104,23 +140,44 @@
 <body>
 
 <div class="controls">
-  <input type="file" id="img" accept="image/*">
-  <label>font size<input type="range" id="fontSize" min="4" max="24" value="11"></label>
-  <label>press<input type="range" id="amplitude" min="0" max="100" value="25"></label>
-  <label>smoothing<input type="range" id="smooth" min="0" max="60" value="18"></label>
-  <label>thickness<input type="range" id="thickness" min="0" max="100" value="40"></label>
-  <label>invert<input type="checkbox" id="invert"></label>
-  <label>white bg<input type="checkbox" id="whitebg"></label>
-  <label>pulse<input type="checkbox" id="pulse"></label>
-  <label>speed<input type="range" id="speed" min="1" max="20" value="6"></label>
-  <label>wave<input type="range" id="wave" min="0" max="60" value="20"></label>
-  <label>pad<input type="range" id="pad" min="0" max="60" value="14"></label>
-  <button id="render">render</button>
-  <button id="save">save PNG</button>
-  <label>loops<input type="number" id="gifLoops" min="1" max="5" value="1" style="width:40px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
-  <span id="gifInfo" style="font-size:11px;color:#666;align-self:center"></span>
-  <label>gif px<input type="number" id="gifW" min="200" max="1200" value="600" style="width:55px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
-  <button id="recordGif">record GIF</button>
+  <div class="vertex-grid">
+    <section class="vertex-card">
+      <div class="vertex-title">FORCE</div>
+      <div class="vertex-sub">displacement power + glyph mass</div>
+      <label>press<input type="range" id="amplitude" min="0" max="100" value="25"></label>
+      <label>thickness<input type="range" id="thickness" min="0" max="100" value="40"></label>
+    </section>
+    <section class="vertex-card">
+      <div class="vertex-title">FLOW</div>
+      <div class="vertex-sub">field shape + polarity</div>
+      <label>smoothing<input type="range" id="smooth" min="0" max="60" value="18"></label>
+      <label>invert<input type="checkbox" id="invert"></label>
+    </section>
+    <section class="vertex-card">
+      <div class="vertex-title">TIME</div>
+      <div class="vertex-sub">animation pulse + phase drift</div>
+      <label>pulse<input type="checkbox" id="pulse"></label>
+      <label>speed<input type="range" id="speed" min="1" max="20" value="6"></label>
+      <label>wave<input type="range" id="wave" min="0" max="60" value="20"></label>
+    </section>
+    <section class="vertex-card">
+      <div class="vertex-title">FORM</div>
+      <div class="vertex-sub">typography + composition</div>
+      <label>font size<input type="range" id="fontSize" min="4" max="24" value="11"></label>
+      <label>pad<input type="range" id="pad" min="0" max="60" value="14"></label>
+      <label>white bg<input type="checkbox" id="whitebg"></label>
+    </section>
+  </div>
+
+  <div class="utility-bar">
+    <input type="file" id="img" accept="image/*">
+    <button id="render">render</button>
+    <button id="save">save PNG</button>
+    <label>loops<input type="number" id="gifLoops" min="1" max="5" value="1" style="width:40px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
+    <span id="gifInfo" style="font-size:11px;color:#666;align-self:center"></span>
+    <label>gif px<input type="number" id="gifW" min="200" max="1200" value="600" style="width:55px;background:#111;color:#ccc;border:1px solid #333;padding:2px 4px;font-family:monospace"></label>
+    <button id="recordGif">record GIF</button>
+  </div>
 </div>
 
 <div class="tetra-panel">
