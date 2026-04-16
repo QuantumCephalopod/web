@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
-const diagnostics = require('../moiré/pretext-diagnostics.js');
+const diagnostics = require('../../moiré/pretext-diagnostics.js');
 
 function createStatusEl() {
   return {
